@@ -11,50 +11,15 @@ import LoginForm from './LoginForm';
 import { SignIn } from '@clerk/clerk-react';
 import { useAuthContext } from '~/hooks/AuthContext';
 
-function Login() {
+// Separate component for regular auth login (uses auth context)
+function RegularLogin() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const useClerk = import.meta.env.VITE_CLERK_ENABLED === 'true';
+  const { error, setError, login } = useAuthContext();
   const { startupConfig } = useOutletContext<TLoginLayoutContext>();
-  
-  // Always call hooks unconditionally (React rules)
-  // When Clerk is enabled, we return early so this won't be used, but hook must be called
-  let authContext;
-  try {
-    authContext = useAuthContext();
-  } catch (e) {
-    // Auth context not available - this is OK if Clerk is enabled
-    authContext = null;
-  }
-  
-  // Debug: Log Clerk configuration (remove after testing)
-  useEffect(() => {
-    console.log('[Login] Clerk Config:', {
-      enabled: import.meta.env.VITE_CLERK_ENABLED,
-      hasPublishableKey: !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
-      useClerk,
-    });
-  }, [useClerk]);
-  
-  // If Clerk is enabled, show Clerk's SignIn component
-  // Clerk handles its own auth, so we don't need to use auth context here
-  if (useClerk) {
-    return <SignIn routing="path" path="/login" signUpUrl="/register" />;
-  }
-  
-  // For regular auth, use the auth context
-  if (!authContext) {
-    // This shouldn't happen if regular auth is properly set up
-    return <div>Authentication error. Please refresh the page.</div>;
-  }
-  
-  const { error, setError, login } = authContext;
 
   const [searchParams, setSearchParams] = useSearchParams();
-  // Determine if auto-redirect should be disabled based on the URL parameter
   const disableAutoRedirect = searchParams.get('redirect') === 'false';
-
-  // Persist the disable flag locally so that once detected, auto-redirect stays disabled.
   const [isAutoRedirectDisabled, setIsAutoRedirectDisabled] = useState(disableAutoRedirect);
 
   useEffect(() => {
@@ -70,7 +35,6 @@ function Login() {
     }
   }, [searchParams, setSearchParams, showToast, localize]);
 
-  // Once the disable flag is detected, update local state and remove the parameter from the URL.
   useEffect(() => {
     if (disableAutoRedirect) {
       setIsAutoRedirectDisabled(true);
@@ -80,7 +44,6 @@ function Login() {
     }
   }, [disableAutoRedirect, searchParams, setSearchParams]);
 
-  // Determine whether we should auto-redirect to OpenID.
   const shouldAutoRedirect =
     startupConfig?.openidLoginEnabled &&
     startupConfig?.openidAutoRedirect &&
@@ -94,7 +57,6 @@ function Login() {
     }
   }, [shouldAutoRedirect, startupConfig]);
 
-  // Render fallback UI if auto-redirect is active.
   if (shouldAutoRedirect) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-4">
@@ -147,6 +109,29 @@ function Login() {
       )}
     </>
   );
+}
+
+// Main Login component - routes to Clerk or Regular login
+function Login() {
+  const useClerk = import.meta.env.VITE_CLERK_ENABLED === 'true';
+  
+  // Debug: Log Clerk configuration (remove after testing)
+  useEffect(() => {
+    console.log('[Login] Clerk Config:', {
+      enabled: import.meta.env.VITE_CLERK_ENABLED,
+      hasPublishableKey: !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
+      useClerk,
+    });
+  }, [useClerk]);
+  
+  // If Clerk is enabled, show Clerk's SignIn component
+  // This component doesn't need auth context
+  if (useClerk) {
+    return <SignIn routing="path" path="/login" signUpUrl="/register" />;
+  }
+  
+  // For regular auth, use the RegularLogin component which has auth context
+  return <RegularLogin />;
 }
 
 export default Login;
