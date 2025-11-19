@@ -229,7 +229,7 @@ const useAuthContext = () => {
   const context = useContext(AuthContext);
 
   if (context === undefined) {
-    throw new Error('useAuthContext should be used inside AuthProvider');
+    throw new Error('useAuthContext should be used inside AuthProvider or ClerkAuthContextProvider');
   }
 
   return context;

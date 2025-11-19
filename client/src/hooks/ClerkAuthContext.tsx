@@ -5,8 +5,9 @@ import { SystemRoles } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import store from '~/store';
 import { useGetRole } from '~/data-provider';
+import { AuthContext } from './AuthContext';
 
-const AuthContext = createContext<any>(undefined);
+// Use the same AuthContext instance so useAuthContext() works with both providers
 
 /**
  * Clerk-based Auth Context Provider
