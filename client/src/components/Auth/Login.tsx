@@ -17,12 +17,22 @@ function Login() {
   const { showToast } = useToastContext();
   const useClerk = import.meta.env.VITE_CLERK_ENABLED === 'true';
   
+  // Debug: Log Clerk configuration (remove after testing)
+  useEffect(() => {
+    console.log('[Login] Clerk Config:', {
+      enabled: import.meta.env.VITE_CLERK_ENABLED,
+      hasPublishableKey: !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
+      useClerk,
+    });
+  }, [useClerk]);
+  
   // Use appropriate auth context based on Clerk configuration
   let authContext;
   try {
     authContext = useClerk ? useClerkAuthContext() : useAuthContext();
   } catch (e) {
     // Fallback to regular auth if Clerk context not available
+    console.warn('[Login] Clerk auth context not available, using regular auth:', e);
     authContext = useAuthContext();
   }
   
