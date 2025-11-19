@@ -5,17 +5,27 @@ import { useOutletContext, useSearchParams } from 'react-router-dom';
 import type { TLoginLayoutContext } from '~/common';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import SocialButton from '~/components/Auth/SocialButton';
-import { useAuthContext } from '~/hooks/AuthContext';
-import { useClerkAuthContext } from '~/hooks/ClerkAuthContext';
 import { getLoginError } from '~/utils';
 import { useLocalize } from '~/hooks';
 import LoginForm from './LoginForm';
 import { SignIn } from '@clerk/clerk-react';
+import { useAuthContext } from '~/hooks/AuthContext';
 
 function Login() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const useClerk = import.meta.env.VITE_CLERK_ENABLED === 'true';
+  const { startupConfig } = useOutletContext<TLoginLayoutContext>();
+  
+  // Always call hooks unconditionally (React rules)
+  // When Clerk is enabled, we return early so this won't be used, but hook must be called
+  let authContext;
+  try {
+    authContext = useAuthContext();
+  } catch (e) {
+    // Auth context not available - this is OK if Clerk is enabled
+    authContext = null;
+  }
   
   // Debug: Log Clerk configuration (remove after testing)
   useEffect(() => {
@@ -26,23 +36,19 @@ function Login() {
     });
   }, [useClerk]);
   
-  // Use appropriate auth context based on Clerk configuration
-  let authContext;
-  try {
-    authContext = useClerk ? useClerkAuthContext() : useAuthContext();
-  } catch (e) {
-    // Fallback to regular auth if Clerk context not available
-    console.warn('[Login] Clerk auth context not available, using regular auth:', e);
-    authContext = useAuthContext();
-  }
-  
-  const { error, setError, login } = authContext;
-  const { startupConfig } = useOutletContext<TLoginLayoutContext>();
-  
   // If Clerk is enabled, show Clerk's SignIn component
+  // Clerk handles its own auth, so we don't need to use auth context here
   if (useClerk) {
     return <SignIn routing="path" path="/login" signUpUrl="/register" />;
   }
+  
+  // For regular auth, use the auth context
+  if (!authContext) {
+    // This shouldn't happen if regular auth is properly set up
+    return <div>Authentication error. Please refresh the page.</div>;
+  }
+  
+  const { error, setError, login } = authContext;
 
   const [searchParams, setSearchParams] = useSearchParams();
   // Determine if auto-redirect should be disabled based on the URL parameter
