@@ -6,15 +6,33 @@ import type { TLoginLayoutContext } from '~/common';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import SocialButton from '~/components/Auth/SocialButton';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useClerkAuthContext } from '~/hooks/ClerkAuthContext';
 import { getLoginError } from '~/utils';
 import { useLocalize } from '~/hooks';
 import LoginForm from './LoginForm';
+import { SignIn } from '@clerk/clerk-react';
 
 function Login() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { error, setError, login } = useAuthContext();
+  const useClerk = import.meta.env.VITE_CLERK_ENABLED === 'true';
+  
+  // Use appropriate auth context based on Clerk configuration
+  let authContext;
+  try {
+    authContext = useClerk ? useClerkAuthContext() : useAuthContext();
+  } catch (e) {
+    // Fallback to regular auth if Clerk context not available
+    authContext = useAuthContext();
+  }
+  
+  const { error, setError, login } = authContext;
   const { startupConfig } = useOutletContext<TLoginLayoutContext>();
+  
+  // If Clerk is enabled, show Clerk's SignIn component
+  if (useClerk) {
+    return <SignIn routing="path" path="/login" signUpUrl="/register" />;
+  }
 
   const [searchParams, setSearchParams] = useSearchParams();
   // Determine if auto-redirect should be disabled based on the URL parameter

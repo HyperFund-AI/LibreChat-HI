@@ -3,11 +3,117 @@ const { Tools } = require('librechat-data-provider');
 const { logger } = require('@librechat/data-schemas');
 
 /**
+ * Extracts domain from a URL
+ * @param {string} url - The URL to extract domain from
+ * @returns {string|null} - The domain or null if invalid
+ */
+function extractDomain(url) {
+  if (!url || typeof url !== 'string') {
+    return null;
+  }
+  try {
+    const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
+    return urlObj.hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Checks if a domain is allowed based on allowed/blocked domain lists
+ * @param {string} url - The URL to check
+ * @param {string[]|undefined} allowedDomains - List of allowed domains (if empty/undefined, all allowed)
+ * @param {string[]|undefined} blockedDomains - List of blocked domains
+ * @returns {boolean} - True if domain is allowed
+ */
+function isDomainAllowed(url, allowedDomains, blockedDomains) {
+  const domain = extractDomain(url);
+  if (!domain) {
+    return false;
+  }
+
+  // Check blocked domains first
+  if (blockedDomains && Array.isArray(blockedDomains) && blockedDomains.length > 0) {
+    for (const blocked of blockedDomains) {
+      const blockedDomain = extractDomain(blocked);
+      if (!blockedDomain) continue;
+      
+      // Support wildcard domains (e.g., "*.example.com")
+      if (blockedDomain.startsWith('*.')) {
+        const baseDomain = blockedDomain.slice(2);
+        if (domain === baseDomain || domain.endsWith(`.${baseDomain}`)) {
+          return false;
+        }
+      } else if (domain === blockedDomain) {
+        return false;
+      }
+    }
+  }
+
+  // Check allowed domains (if specified)
+  if (allowedDomains && Array.isArray(allowedDomains) && allowedDomains.length > 0) {
+    for (const allowed of allowedDomains) {
+      const allowedDomain = extractDomain(allowed);
+      if (!allowedDomain) continue;
+      
+      // Support wildcard domains (e.g., "*.example.com")
+      if (allowedDomain.startsWith('*.')) {
+        const baseDomain = allowedDomain.slice(2);
+        if (domain === baseDomain || domain.endsWith(`.${baseDomain}`)) {
+          return true;
+        }
+      } else if (domain === allowedDomain) {
+        return true;
+      }
+    }
+    // If allowed domains are specified but domain doesn't match, block it
+    return false;
+  }
+
+  // If no restrictions, allow all (except blocked)
+  return true;
+}
+
+/**
+ * Filters search results based on domain restrictions
+ * @param {object} data - Search result data
+ * @param {string[]|undefined} allowedDomains - Allowed domains
+ * @param {string[]|undefined} blockedDomains - Blocked domains
+ * @returns {object} - Filtered search result data
+ */
+function filterSearchResults(data, allowedDomains, blockedDomains) {
+  if (!data) {
+    return data;
+  }
+
+  const filtered = { ...data };
+
+  // Filter organic results
+  if (Array.isArray(filtered.organic)) {
+    filtered.organic = filtered.organic.filter((source) => {
+      if (!source.link) return false;
+      return isDomainAllowed(source.link, allowedDomains, blockedDomains);
+    });
+  }
+
+  // Filter top stories
+  if (Array.isArray(filtered.topStories)) {
+    filtered.topStories = filtered.topStories.filter((source) => {
+      if (!source.link) return false;
+      return isDomainAllowed(source.link, allowedDomains, blockedDomains);
+    });
+  }
+
+  return filtered;
+}
+
+/**
  * Creates a function to handle search results and stream them as attachments
  * @param {import('http').ServerResponse} res - The HTTP server response object
+ * @param {object} [webSearchConfig] - Web search configuration with domain restrictions
  * @returns {{ onSearchResults: function(SearchResult, GraphRunnableConfig): void; onGetHighlights: function(string): void}} - Function that takes search results and returns or streams an attachment
  */
-function createOnSearchResults(res) {
+function createOnSearchResults(res, webSearchConfig) {
   const context = {
     sourceMap: new Map(),
     searchResultData: undefined,
@@ -35,7 +141,14 @@ function createOnSearchResults(res) {
     }
 
     const turn = runnableConfig.toolCall?.turn ?? 0;
-    const data = { turn, ...structuredClone(results.data ?? {}) };
+    let data = { turn, ...structuredClone(results.data ?? {}) };
+    
+    // Filter results based on domain restrictions
+    if (webSearchConfig) {
+      const { allowedDomains, blockedDomains } = webSearchConfig;
+      data = filterSearchResults(data, allowedDomains, blockedDomains);
+    }
+    
     context.searchResultData = data;
 
     // Map sources to links

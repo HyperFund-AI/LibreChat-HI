@@ -422,7 +422,7 @@ async function loadAgentTools({ req, res, agent, signal, tool_resources, openAIA
   /** @type {ReturnType<typeof createOnSearchResults>} */
   let webSearchCallbacks;
   if (includesWebSearch) {
-    webSearchCallbacks = createOnSearchResults(res);
+    webSearchCallbacks = createOnSearchResults(res, appConfig.webSearch);
   }
 
   /** @type {Record<string, Record<string, string>>} */

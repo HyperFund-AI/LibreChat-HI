@@ -106,6 +106,12 @@ const userSchema = new Schema<IUser>(
       unique: true,
       sparse: true,
     },
+    clerkId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true,
+    },
     plugins: {
       type: Array,
     },

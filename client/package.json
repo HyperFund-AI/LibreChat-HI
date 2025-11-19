@@ -96,6 +96,7 @@
     "react-resizable-panels": "^3.0.6",
     "react-router-dom": "^6.11.2",
     "react-speech-recognition": "^3.10.0",
+    "@clerk/clerk-react": "^5.0.0",
     "react-textarea-autosize": "^8.4.0",
     "react-transition-group": "^4.4.5",
     "react-virtualized": "^9.22.6",

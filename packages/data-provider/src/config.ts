@@ -730,6 +730,8 @@ export const webSearchSchema = z.object({
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
   scraperTimeout: z.number().optional(),
   safeSearch: z.nativeEnum(SafeSearchTypes).default(SafeSearchTypes.MODERATE),
+  allowedDomains: z.array(z.string()).optional(),
+  blockedDomains: z.array(z.string()).optional(),
   firecrawlOptions: z
     .object({
       formats: z.array(z.string()).optional(),

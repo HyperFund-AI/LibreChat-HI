@@ -11,7 +11,7 @@ import {
 import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
 import AgentMarketplace from '~/components/Agents/Marketplace';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
-import { AuthContextProvider } from '~/hooks/AuthContext';
+import { getAuthProvider } from '~/hooks/getAuthProvider';
 import RouteErrorBoundary from './RouteErrorBoundary';
 import StartupLayout from './Layouts/Startup';
 import LoginLayout from './Layouts/Login';
@@ -21,11 +21,13 @@ import ChatRoute from './ChatRoute';
 import Search from './Search';
 import Root from './Root';
 
+const AuthProvider = getAuthProvider();
+
 const AuthLayout = () => (
-  <AuthContextProvider>
+  <AuthProvider>
     <Outlet />
     <ApiErrorWatcher />
-  </AuthContextProvider>
+  </AuthProvider>
 );
 
 const baseEl = document.querySelector('base');
