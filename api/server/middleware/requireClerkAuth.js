@@ -44,31 +44,41 @@ const requireClerkAuth = async (req, res, next) => {
       return res.status(401).json({ message: 'User not found in Clerk' });
     }
 
+    // Get primary email address (Clerk may have multiple email addresses)
+    const primaryEmail = clerkUser.emailAddresses?.find(email => email.id === clerkUser.primaryEmailAddressId)?.emailAddress 
+                      || clerkUser.emailAddresses?.[0]?.emailAddress;
+
     // Find or create user in local database
     let user = await findUser({ clerkId: clerkUser.id });
 
     if (!user) {
       // Try to find by email for migration purposes
-      if (clerkUser.emailAddresses?.[0]?.emailAddress) {
-        user = await findUser({ email: clerkUser.emailAddresses[0].emailAddress });
+      if (primaryEmail) {
+        user = await findUser({ email: primaryEmail });
       }
 
       if (user) {
         // Migrate existing user: add Clerk ID
         user = await updateUser(user._id.toString(), {
           clerkId: clerkUser.id,
-          emailVerified: clerkUser.emailAddresses?.[0]?.verification?.status === 'verified',
+          emailVerified: clerkUser.emailAddresses?.find(email => email.id === clerkUser.primaryEmailAddressId)?.verification?.status === 'verified' 
+                      || clerkUser.emailAddresses?.[0]?.verification?.status === 'verified',
         });
       } else {
-        // Create new user
+        // Create new user - handle OAuth providers
+        const firstName = clerkUser.firstName || clerkUser.externalAccounts?.[0]?.firstName || '';
+        const lastName = clerkUser.lastName || clerkUser.externalAccounts?.[0]?.lastName || '';
+        const fullName = firstName && lastName ? `${firstName} ${lastName}` : (firstName || lastName || clerkUser.username || '');
+        
         const userData = {
           clerkId: clerkUser.id,
-          email: clerkUser.emailAddresses?.[0]?.emailAddress || '',
-          name: clerkUser.firstName || clerkUser.username || '',
-          username: clerkUser.username || '',
-          avatar: clerkUser.imageUrl || null,
+          email: primaryEmail || '',
+          name: fullName,
+          username: clerkUser.username || primaryEmail?.split('@')[0] || '',
+          avatar: clerkUser.imageUrl || clerkUser.externalAccounts?.[0]?.imageUrl || null,
           provider: 'clerk',
-          emailVerified: clerkUser.emailAddresses?.[0]?.verification?.status === 'verified',
+          emailVerified: clerkUser.emailAddresses?.find(email => email.id === clerkUser.primaryEmailAddressId)?.verification?.status === 'verified' 
+                      || clerkUser.emailAddresses?.[0]?.verification?.status === 'verified',
           role: SystemRoles.USER,
         };
 
@@ -83,12 +93,19 @@ const requireClerkAuth = async (req, res, next) => {
       }
     } else {
       // Update user info from Clerk
+      const primaryEmail = clerkUser.emailAddresses?.find(email => email.id === clerkUser.primaryEmailAddressId)?.emailAddress 
+                        || clerkUser.emailAddresses?.[0]?.emailAddress;
+      const firstName = clerkUser.firstName || clerkUser.externalAccounts?.[0]?.firstName || '';
+      const lastName = clerkUser.lastName || clerkUser.externalAccounts?.[0]?.lastName || '';
+      const fullName = firstName && lastName ? `${firstName} ${lastName}` : (firstName || lastName || user.name || '');
+      
       const updateData = {
-        email: clerkUser.emailAddresses?.[0]?.emailAddress || user.email,
-        name: clerkUser.firstName || user.name || '',
+        email: primaryEmail || user.email,
+        name: fullName || user.name || '',
         username: clerkUser.username || user.username || '',
-        avatar: clerkUser.imageUrl || user.avatar,
-        emailVerified: clerkUser.emailAddresses?.[0]?.verification?.status === 'verified',
+        avatar: clerkUser.imageUrl || clerkUser.externalAccounts?.[0]?.imageUrl || user.avatar,
+        emailVerified: clerkUser.emailAddresses?.find(email => email.id === clerkUser.primaryEmailAddressId)?.verification?.status === 'verified' 
+                    || clerkUser.emailAddresses?.[0]?.verification?.status === 'verified',
       };
 
       user = await updateUser(user._id.toString(), updateData);

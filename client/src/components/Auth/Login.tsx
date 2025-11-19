@@ -127,7 +127,21 @@ function Login() {
   // If Clerk is enabled, show Clerk's SignIn component
   // This component doesn't need auth context
   if (useClerk) {
-    return <SignIn routing="path" path="/login" signUpUrl="/register" />;
+    return (
+      <div className="w-full">
+        <SignIn 
+          routing="path" 
+          path="/login" 
+          signUpUrl="/register"
+          appearance={{
+            elements: {
+              rootBox: "mx-auto",
+              card: "shadow-none",
+            }
+          }}
+        />
+      </div>
+    );
   }
   
   // For regular auth, use the RegularLogin component which has auth context
