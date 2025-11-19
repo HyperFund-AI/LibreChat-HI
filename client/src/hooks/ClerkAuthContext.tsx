@@ -69,6 +69,27 @@ const ClerkAuthContextInner = ({ children }: { children: ReactNode }) => {
         if (response.ok) {
           const userData = await response.json();
           setUser(userData);
+        } else if (response.status === 401) {
+          // If backend returns 401, user might not be synced yet - retry once
+          console.warn('[ClerkAuthContext] Backend returned 401, retrying sync...');
+          setTimeout(async () => {
+            try {
+              const retryToken = await getToken();
+              if (retryToken) {
+                const retryResponse = await fetch('/api/user', {
+                  headers: {
+                    Authorization: `Bearer ${retryToken}`,
+                  },
+                });
+                if (retryResponse.ok) {
+                  const userData = await retryResponse.json();
+                  setUser(userData);
+                }
+              }
+            } catch (error) {
+              console.error('[ClerkAuthContext] Retry sync failed:', error);
+            }
+          }, 1000);
         }
       } catch (error) {
         console.error('Failed to fetch user from backend:', error);
@@ -105,7 +126,9 @@ const ClerkAuthContextInner = ({ children }: { children: ReactNode }) => {
         [SystemRoles.USER]: userRole,
         [SystemRoles.ADMIN]: adminRole,
       },
-      isAuthenticated: isSignedIn && !!user,
+      // For Clerk, isAuthenticated should be true if Clerk says user is signed in
+      // The backend sync will happen asynchronously, but we shouldn't block on it
+      isAuthenticated: isSignedIn,
     }),
     [user, isSignedIn, userRole, adminRole],
   );

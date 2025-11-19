@@ -29,13 +29,15 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
   const location = useLocation();
 
   useEffect(() => {
-    if (isAuthenticated) {
+    // Only redirect if we're on an auth page (login/register) and user is authenticated
+    // Don't redirect if we're already on a protected route
+    if (isAuthenticated && (location.pathname === '/login' || location.pathname === '/register')) {
       navigate('/c/new', { replace: true });
     }
     if (data) {
       setStartupConfig(data);
     }
-  }, [isAuthenticated, navigate, data]);
+  }, [isAuthenticated, navigate, data, location.pathname]);
 
   useEffect(() => {
     document.title = startupConfig?.appTitle || 'HyperAI';
