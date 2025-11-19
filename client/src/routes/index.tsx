@@ -8,6 +8,7 @@ import {
   TwoFactorScreen,
   RequestPasswordReset,
 } from '~/components/Auth';
+import ClerkCallback from '~/components/Auth/ClerkCallback';
 import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
 import AgentMarketplace from '~/components/Agents/Marketplace';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
@@ -93,6 +94,10 @@ export const router = createBrowserRouter(
             {
               path: 'login/2fa',
               element: <TwoFactorScreen />,
+            },
+            {
+              path: 'login/sso-callback',
+              element: <ClerkCallback />,
             },
           ],
         },
