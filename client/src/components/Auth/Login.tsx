@@ -133,6 +133,7 @@ function Login() {
           routing="path" 
           path="/login" 
           signUpUrl="/register"
+          fallbackRedirectUrl="/c/new"
           appearance={{
             elements: {
               rootBox: "mx-auto",

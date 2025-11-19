@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import React, { useContext, useState } from 'react';
+import React, { useContext, useState, useEffect } from 'react';
 import { Turnstile } from '@marsidev/react-turnstile';
 import { ThemeContext, Spinner, Button, isDark } from '@librechat/client';
 import { useNavigate, useOutletContext, useLocation } from 'react-router-dom';
@@ -8,8 +8,30 @@ import type { TRegisterUser, TError } from 'librechat-data-provider';
 import type { TLoginLayoutContext } from '~/common';
 import { useLocalize, TranslationKeys } from '~/hooks';
 import { ErrorMessage } from './ErrorMessage';
+import { SignUp } from '@clerk/clerk-react';
 
 const Registration: React.FC = () => {
+  const useClerk = import.meta.env.VITE_CLERK_ENABLED === 'true';
+  
+  // If Clerk is enabled, show Clerk's SignUp component
+  if (useClerk) {
+    return (
+      <div className="w-full">
+        <SignUp 
+          routing="path" 
+          path="/register" 
+          signInUrl="/login"
+          fallbackRedirectUrl="/c/new"
+          appearance={{
+            elements: {
+              rootBox: "mx-auto",
+              card: "shadow-none",
+            }
+          }}
+        />
+      </div>
+    );
+  }
   const navigate = useNavigate();
   const localize = useLocalize();
   const { theme } = useContext(ThemeContext);
