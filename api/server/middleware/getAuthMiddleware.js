@@ -1,6 +1,5 @@
 const { isEnabled } = require('@librechat/api');
 const requireJwtAuth = require('./requireJwtAuth');
-const requireClerkAuth = require('./requireClerkAuth');
 
 /**
  * Get the appropriate authentication middleware based on configuration
@@ -8,7 +7,15 @@ const requireClerkAuth = require('./requireClerkAuth');
  */
 const getAuthMiddleware = () => {
   if (isEnabled(process.env.CLERK_ENABLED)) {
-    return requireClerkAuth;
+    // Lazy load Clerk auth to avoid errors if Clerk isn't configured
+    try {
+      const requireClerkAuth = require('./requireClerkAuth');
+      return requireClerkAuth;
+    } catch (error) {
+      // If Clerk auth fails to load, fall back to JWT
+      console.warn('[getAuthMiddleware] Clerk auth not available, falling back to JWT:', error.message);
+      return requireJwtAuth;
+    }
   }
   return requireJwtAuth;
 };
@@ -18,7 +25,14 @@ const getAuthMiddleware = () => {
  */
 const getOptionalAuthMiddleware = () => {
   if (isEnabled(process.env.CLERK_ENABLED)) {
-    return requireClerkAuth.optionalClerkAuth;
+    try {
+      const requireClerkAuth = require('./requireClerkAuth');
+      return requireClerkAuth.optionalClerkAuth;
+    } catch (error) {
+      console.warn('[getOptionalAuthMiddleware] Clerk auth not available, falling back to JWT:', error.message);
+      const { optionalJwtAuth } = require('./optionalJwtAuth');
+      return optionalJwtAuth;
+    }
   }
   const { optionalJwtAuth } = require('./optionalJwtAuth');
   return optionalJwtAuth;

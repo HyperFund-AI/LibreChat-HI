@@ -3,12 +3,23 @@ const { logger } = require('@librechat/data-schemas');
 const { getUserById, findUser, createUser, updateUser } = require('~/models');
 const { SystemRoles } = require('librechat-data-provider');
 
+// Validate Clerk configuration at module load (only warn, don't fail)
+if (!process.env.CLERK_SECRET_KEY) {
+  // Don't log warning at module load - it will be logged when middleware is actually used
+}
+
 /**
  * Clerk Authentication Middleware
  * Verifies Clerk session token and syncs user with local database
  */
 const requireClerkAuth = async (req, res, next) => {
   try {
+    // Check if Clerk is properly configured
+    if (!process.env.CLERK_SECRET_KEY) {
+      logger.error('[requireClerkAuth] CLERK_SECRET_KEY is not set. Cannot authenticate with Clerk.');
+      return res.status(500).json({ message: 'Clerk authentication is not properly configured' });
+    }
+
     // Get Clerk session token from Authorization header or cookie
     const authHeader = req.headers.authorization;
     // Clerk stores session token in __session cookie or Authorization header
