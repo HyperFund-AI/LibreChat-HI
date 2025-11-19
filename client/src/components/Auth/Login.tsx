@@ -134,12 +134,16 @@ function Login() {
           path="/login" 
           signUpUrl="/register"
           fallbackRedirectUrl="/c/new"
+          forceRedirectUrl="/c/new"
           appearance={{
             elements: {
               rootBox: "mx-auto",
               card: "shadow-none",
             }
           }}
+          // Allow OAuth sign-ups by redirecting to sign-up page if account doesn't exist
+          afterSignInUrl="/c/new"
+          afterSignUpUrl="/c/new"
         />
       </div>
     );

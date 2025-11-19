@@ -22,12 +22,16 @@ const Registration: React.FC = () => {
           path="/register" 
           signInUrl="/login"
           fallbackRedirectUrl="/c/new"
+          forceRedirectUrl="/c/new"
           appearance={{
             elements: {
               rootBox: "mx-auto",
               card: "shadow-none",
             }
           }}
+          // Allow OAuth sign-ups
+          afterSignInUrl="/c/new"
+          afterSignUpUrl="/c/new"
         />
       </div>
     );

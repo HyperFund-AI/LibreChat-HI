@@ -61,10 +61,6 @@ export const router = createBrowserRouter(
       errorElement: <RouteErrorBoundary />,
       children: [
         {
-          path: 'register',
-          element: <Registration />,
-        },
-        {
           path: 'forgot-password',
           element: <RequestPasswordReset />,
         },
@@ -98,6 +94,10 @@ export const router = createBrowserRouter(
             {
               path: 'login/sso-callback',
               element: <ClerkCallback />,
+            },
+            {
+              path: 'register',
+              element: <Registration />,
             },
           ],
         },
