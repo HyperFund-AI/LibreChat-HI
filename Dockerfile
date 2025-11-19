@@ -38,6 +38,15 @@ RUN \
 
 COPY --chown=node:node . .
 
+# Accept build arguments for Vite environment variables
+ARG VITE_CLERK_ENABLED
+ARG VITE_CLERK_PUBLISHABLE_KEY
+# Add any other VITE_ variables you need at build time
+
+# Set them as environment variables for the build
+ENV VITE_CLERK_ENABLED=$VITE_CLERK_ENABLED
+ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
+
 RUN \
     # React client build
     NODE_OPTIONS="--max-old-space-size=2048" npm run frontend; \
