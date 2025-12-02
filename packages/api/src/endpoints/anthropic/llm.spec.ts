@@ -718,7 +718,7 @@ describe('getLLMConfig', () => {
         const result = getLLMConfig('test-key', { modelOptions: {} });
 
         expect(result.llmConfig).toMatchObject({
-          model: 'claude-3-5-sonnet-latest', // default model
+          model: 'claude-opus-4-5', // default model
           stream: true, // default stream
           maxTokens: 8192, // DEFAULT_MAX_OUTPUT for claude-3-5-sonnet
         });
