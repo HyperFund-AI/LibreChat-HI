@@ -9,6 +9,7 @@ import { getLocalStorageItems } from './localStorage';
 
 /**
  * Upgrades Claude models to the latest Opus 4.5 for Anthropic endpoint
+ * Also normalizes any Opus 4.5 model names with dates to the base name
  */
 function upgradeClaudeModel(
   model: string | undefined,
@@ -16,6 +17,17 @@ function upgradeClaudeModel(
 ): string | undefined {
   if (!model || endpoint !== EModelEndpoint.anthropic) {
     return model;
+  }
+
+  // Normalize any Opus 4.5 model names (with or without dates) to the base name
+  // This handles cases like claude-opus-4-5-20251101, claude-opus-4-5-20250420, etc.
+  if (
+    model === 'claude-opus-4-5' ||
+    model.startsWith('claude-opus-4-5-') ||
+    model === 'claude-opus-4-5-20250420' ||
+    model === 'claude-opus-4-5-20251101'
+  ) {
+    return 'claude-opus-4-5';
   }
 
   // Upgrade old Claude 3.5 models

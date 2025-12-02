@@ -251,6 +251,12 @@ export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
       // If no model is specified, use the default Claude Opus 4.5
       preset.model = 'claude-opus-4-5';
     } else if (
+      // Normalize any Opus 4.5 model names (with or without dates) to the base name
+      // This handles cases like claude-opus-4-5-20251101, claude-opus-4-5-20250420, etc.
+      preset.model === 'claude-opus-4-5' ||
+      preset.model.startsWith('claude-opus-4-5-') ||
+      preset.model === 'claude-opus-4-5-20250420' ||
+      preset.model === 'claude-opus-4-5-20251101' ||
       // Upgrade old Claude 3.5 models
       preset.model === 'claude-3-5-sonnet-latest' ||
       preset.model === 'claude-3-5-sonnet-20241022' ||
