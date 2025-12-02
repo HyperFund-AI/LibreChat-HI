@@ -210,13 +210,15 @@ export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
     return;
   }
   const defaultSpec = list?.find((spec) => spec.default);
-  
+
   // Prefer Claude Opus 4.5 if no default is set
   const claudeOpus45Spec = list?.find(
-    (spec) => spec.preset?.endpoint === EModelEndpoint.anthropic && 
-              (spec.preset?.model === 'claude-opus-4-5' || spec.preset?.model === 'claude-opus-4-5-20250420')
+    (spec) =>
+      spec.preset?.endpoint === EModelEndpoint.anthropic &&
+      (spec.preset?.model === 'claude-opus-4-5' ||
+        spec.preset?.model === 'claude-opus-4-5-20250420'),
   );
-  
+
   if (prioritize === true || !interfaceConfig?.modelSelect) {
     const lastSelectedSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
     const lastSelectedSpec = list?.find((spec) => spec.name === lastSelectedSpecName);
@@ -242,7 +244,7 @@ export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
     return;
   }
   const preset = { ...modelSpec.preset };
-  
+
   // Automatically upgrade to Claude Opus 4.5 for Anthropic endpoint
   if (preset.endpoint === EModelEndpoint.anthropic) {
     if (!preset.model) {
@@ -267,13 +269,13 @@ export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
     ) {
       preset.model = 'claude-opus-4-5';
     }
-    
+
     // Enable web search by default if not explicitly set
     if (preset.web_search === undefined || preset.web_search === null) {
       preset.web_search = true;
     }
   }
-  
+
   return {
     ...preset,
     spec: modelSpec.name,
