@@ -195,7 +195,7 @@ export function applyModelSpecEphemeralAgent({
 
 /**
  * Gets default model spec from config and user preferences.
- * Priority: admin default → last selected → Claude Sonnet 4.5 → first spec (when prioritize=true or modelSelect disabled).
+ * Priority: admin default → last selected → Claude Opus 4.5 → first spec (when prioritize=true or modelSelect disabled).
  * Otherwise: admin default or last conversation spec.
  */
 export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
@@ -210,17 +210,19 @@ export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
     return;
   }
   const defaultSpec = list?.find((spec) => spec.default);
-  
-  // Prefer Claude Sonnet 4.5 if no default is set
-  const claudeSonnet45Spec = list?.find(
-    (spec) => spec.preset?.endpoint === EModelEndpoint.anthropic && 
-              (spec.preset?.model === 'claude-sonnet-4-5' || spec.preset?.model === 'claude-sonnet-4-5-20250929')
+
+  // Prefer Claude Opus 4.5 if no default is set
+  const claudeOpus45Spec = list?.find(
+    (spec) =>
+      spec.preset?.endpoint === EModelEndpoint.anthropic &&
+      (spec.preset?.model === 'claude-opus-4-5' ||
+        spec.preset?.model === 'claude-opus-4-5-20250420'),
   );
-  
+
   if (prioritize === true || !interfaceConfig?.modelSelect) {
     const lastSelectedSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
     const lastSelectedSpec = list?.find((spec) => spec.name === lastSelectedSpecName);
-    return { default: defaultSpec || lastSelectedSpec || claudeSonnet45Spec || list?.[0] };
+    return { default: defaultSpec || lastSelectedSpec || claudeOpus45Spec || list?.[0] };
   } else if (defaultSpec) {
     return { default: defaultSpec };
   }
@@ -228,9 +230,9 @@ export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
     localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0') ?? '{}',
   );
   if (!lastConversationSetup.spec) {
-    // If no last conversation, prefer Claude Sonnet 4.5
-    if (claudeSonnet45Spec) {
-      return { default: claudeSonnet45Spec };
+    // If no last conversation, prefer Claude Opus 4.5
+    if (claudeOpus45Spec) {
+      return { default: claudeOpus45Spec };
     }
     return;
   }
@@ -242,34 +244,38 @@ export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
     return;
   }
   const preset = { ...modelSpec.preset };
-  
-  // Automatically upgrade to Claude Sonnet 4.5 for Anthropic endpoint
+
+  // Automatically upgrade to Claude Opus 4.5 for Anthropic endpoint
   if (preset.endpoint === EModelEndpoint.anthropic) {
     if (!preset.model) {
-      // If no model is specified, use the default Claude Sonnet 4.5
-      preset.model = 'claude-sonnet-4-5-20250929';
+      // If no model is specified, use the default Claude Opus 4.5
+      preset.model = 'claude-opus-4-5';
     } else if (
       // Upgrade old Claude 3.5 models
       preset.model === 'claude-3-5-sonnet-latest' ||
       preset.model === 'claude-3-5-sonnet-20241022' ||
       preset.model === 'claude-3-5-sonnet-20240620' ||
       preset.model.startsWith('claude-3-5-sonnet') ||
-      // Upgrade Haiku models to Sonnet
+      // Upgrade Haiku models to Opus
       preset.model === 'claude-haiku-4-5' ||
       preset.model === 'claude-haiku-4-5-20251001' ||
       preset.model.startsWith('claude-haiku-4-5') ||
       preset.model.startsWith('claude-3-5-haiku') ||
-      preset.model.startsWith('claude-haiku-3')
+      preset.model.startsWith('claude-haiku-3') ||
+      // Upgrade Sonnet 4.5 to Opus 4.5
+      preset.model === 'claude-sonnet-4-5' ||
+      preset.model === 'claude-sonnet-4-5-20250929' ||
+      preset.model.startsWith('claude-sonnet-4-5')
     ) {
-      preset.model = 'claude-sonnet-4-5-20250929';
+      preset.model = 'claude-opus-4-5';
     }
-    
+
     // Enable web search by default if not explicitly set
     if (preset.web_search === undefined || preset.web_search === null) {
       preset.web_search = true;
     }
   }
-  
+
   return {
     ...preset,
     spec: modelSpec.name,
