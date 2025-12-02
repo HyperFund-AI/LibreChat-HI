@@ -14,7 +14,7 @@ describe('getLLMConfig', () => {
     const result = getLLMConfig('test-api-key', { modelOptions: {} });
 
     expect(result.llmConfig).toHaveProperty('apiKey', 'test-api-key');
-    expect(result.llmConfig).toHaveProperty('model', 'claude-3-5-sonnet-latest');
+    expect(result.llmConfig).toHaveProperty('model', 'claude-opus-4-5');
     expect(result.llmConfig).toHaveProperty('stream', true);
     expect(result.llmConfig).toHaveProperty('maxTokens');
   });
