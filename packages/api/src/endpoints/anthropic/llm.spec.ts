@@ -720,7 +720,7 @@ describe('getLLMConfig', () => {
         expect(result.llmConfig).toMatchObject({
           model: 'claude-opus-4-5', // default model
           stream: true, // default stream
-          maxTokens: 8192, // DEFAULT_MAX_OUTPUT for claude-3-5-sonnet
+          maxTokens: 64000, // DEFAULT_MAX_OUTPUT for claude-opus-4-5
         });
       });
 
