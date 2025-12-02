@@ -37,7 +37,7 @@ export default function Header() {
   });
 
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  
+
   // Debug: Show current model (inconspicuous)
   const currentModel = conversation?.model ?? 'N/A';
 
@@ -73,7 +73,7 @@ export default function Header() {
                 />
                 <TemporaryChat />
                 {/* Debug: Inconspicuous model display */}
-                <span className="text-[10px] text-text-secondary opacity-50 font-normal">
+                <span className="text-[10px] font-normal text-text-secondary opacity-50">
                   {currentModel}
                 </span>
               </>
@@ -87,7 +87,7 @@ export default function Header() {
             />
             <TemporaryChat />
             {/* Debug: Inconspicuous model display */}
-            <span className="text-[10px] text-text-secondary opacity-50 font-normal">
+            <span className="text-[10px] font-normal text-text-secondary opacity-50">
               {currentModel}
             </span>
           </div>
