@@ -8,7 +8,7 @@ import type { TConversation, EndpointSchemaKey } from 'librechat-data-provider';
 import { getLocalStorageItems } from './localStorage';
 
 /**
- * Upgrades Claude models to the latest Sonnet 4.5 for Anthropic endpoint
+ * Upgrades Claude models to the latest Opus 4.5 for Anthropic endpoint
  */
 function upgradeClaudeModel(model: string | undefined, endpoint: EModelEndpoint | null): string | undefined {
   if (!model || endpoint !== EModelEndpoint.anthropic) {
@@ -22,10 +22,10 @@ function upgradeClaudeModel(model: string | undefined, endpoint: EModelEndpoint 
     model === 'claude-3-5-sonnet-20240620' ||
     model.startsWith('claude-3-5-sonnet')
   ) {
-    return 'claude-sonnet-4-5-20250929';
+    return 'claude-opus-4-5';
   }
   
-  // Upgrade Haiku models to Sonnet
+  // Upgrade Haiku models to Opus
   if (
     model === 'claude-haiku-4-5' ||
     model === 'claude-haiku-4-5-20251001' ||
@@ -33,7 +33,16 @@ function upgradeClaudeModel(model: string | undefined, endpoint: EModelEndpoint 
     model.startsWith('claude-3-5-haiku') ||
     model.startsWith('claude-haiku-3')
   ) {
-    return 'claude-sonnet-4-5-20250929';
+    return 'claude-opus-4-5';
+  }
+  
+  // Upgrade Sonnet 4.5 to Opus 4.5
+  if (
+    model === 'claude-sonnet-4-5' ||
+    model === 'claude-sonnet-4-5-20250929' ||
+    model.startsWith('claude-sonnet-4-5')
+  ) {
+    return 'claude-opus-4-5';
   }
   
   return model;
@@ -64,7 +73,7 @@ const buildDefaultConvo = ({
   const availableModels = models;
   let model = lastConversationSetup?.model ?? lastSelectedModel?.[endpoint] ?? '';
   
-  // Upgrade Claude models to Sonnet 4.5
+  // Upgrade Claude models to Opus 4.5
   model = upgradeClaudeModel(model, endpoint) ?? '';
   
   const secondaryModel: string | null =
@@ -108,8 +117,8 @@ const buildDefaultConvo = ({
     if (defaultConvo.model) {
       defaultConvo.model = upgradeClaudeModel(defaultConvo.model, endpoint) ?? defaultConvo.model;
     } else {
-      // If no model is set, use the default Claude Sonnet 4.5
-      defaultConvo.model = 'claude-sonnet-4-5-20250929';
+      // If no model is set, use the default Claude Opus 4.5
+      defaultConvo.model = 'claude-opus-4-5';
     }
     
     // Enable web search by default if not explicitly set
