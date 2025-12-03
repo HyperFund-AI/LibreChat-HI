@@ -19,15 +19,16 @@ function upgradeClaudeModel(
     return model;
   }
 
-  // Normalize any Opus 4.5 model names (with or without dates) to the base name
-  // This handles cases like claude-opus-4-5-20251101, claude-opus-4-5-20250420, etc.
-  if (
-    model === 'claude-opus-4-5' ||
-    model.startsWith('claude-opus-4-5-') ||
-    model === 'claude-opus-4-5-20250420' ||
-    model === 'claude-opus-4-5-20251101'
-  ) {
-    return 'claude-opus-4-5';
+  // Preserve Opus 4.5 model names with dates - don't normalize them
+  // Anthropic requires date suffixes for valid model names
+  // Only normalize if it's the base name without date
+  if (model.startsWith('claude-opus-4-5-')) {
+    return model; // Keep dated version as-is
+  }
+  
+  // If it's claude-opus-4-5 without date, upgrade to dated version
+  if (model === 'claude-opus-4-5') {
+    return 'claude-opus-4-5-20250420';
   }
 
   // Upgrade old Claude 3.5 models
@@ -132,8 +133,9 @@ const buildDefaultConvo = ({
     if (defaultConvo.model) {
       defaultConvo.model = upgradeClaudeModel(defaultConvo.model, endpoint) ?? defaultConvo.model;
     } else {
-      // If no model is set, use the default Claude Opus 4.5
-      defaultConvo.model = 'claude-opus-4-5';
+      // If no model is set, use the default Claude Opus 4.5 with date suffix
+      // Anthropic requires date suffixes for valid model names
+      defaultConvo.model = 'claude-opus-4-5-20250420';
     }
 
     // Enable web search by default if not explicitly set

@@ -212,11 +212,13 @@ export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
   const defaultSpec = list?.find((spec) => spec.default);
 
   // Prefer Claude Opus 4.5 if no default is set
+  // Look for any Opus 4.5 model (with or without date suffix)
   const claudeOpus45Spec = list?.find(
     (spec) =>
       spec.preset?.endpoint === EModelEndpoint.anthropic &&
       (spec.preset?.model === 'claude-opus-4-5' ||
-        spec.preset?.model === 'claude-opus-4-5-20250420'),
+        spec.preset?.model === 'claude-opus-4-5-20250420' ||
+        spec.preset?.model?.startsWith('claude-opus-4-5-')),
   );
 
   if (prioritize === true || !interfaceConfig?.modelSelect) {
@@ -248,15 +250,16 @@ export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
   // Automatically upgrade to Claude Opus 4.5 for Anthropic endpoint
   if (preset.endpoint === EModelEndpoint.anthropic) {
     if (!preset.model) {
-      // If no model is specified, use the default Claude Opus 4.5
-      preset.model = 'claude-opus-4-5';
+      // If no model is specified, use the default Claude Opus 4.5 with date suffix
+      // Anthropic requires date suffixes for valid model names
+      preset.model = 'claude-opus-4-5-20250420';
+    } else if (preset.model.startsWith('claude-opus-4-5-')) {
+      // Keep existing dated Opus 4.5 models as-is - don't modify them
+      // This preserves model names like claude-opus-4-5-20251101
     } else if (
-      // Normalize any Opus 4.5 model names (with or without dates) to the base name
-      // This handles cases like claude-opus-4-5-20251101, claude-opus-4-5-20250420, etc.
-      preset.model === 'claude-opus-4-5' ||
-      preset.model.startsWith('claude-opus-4-5-') ||
-      preset.model === 'claude-opus-4-5-20250420' ||
-      preset.model === 'claude-opus-4-5-20251101' ||
+      // Preserve Opus 4.5 model names with dates - don't normalize them
+      // Only normalize if it's the base name without date
+      preset.model === 'claude-opus-4-5' || // Upgrade base name to dated version
       // Upgrade old Claude 3.5 models
       preset.model === 'claude-3-5-sonnet-latest' ||
       preset.model === 'claude-3-5-sonnet-20241022' ||
@@ -273,7 +276,8 @@ export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
       preset.model === 'claude-sonnet-4-5-20250929' ||
       preset.model.startsWith('claude-sonnet-4-5')
     ) {
-      preset.model = 'claude-opus-4-5';
+      // Use dated version - Anthropic requires date suffixes
+      preset.model = 'claude-opus-4-5-20250420';
     }
 
     // Enable web search by default if not explicitly set
