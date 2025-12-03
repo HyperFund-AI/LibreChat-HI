@@ -599,6 +599,13 @@ export const deleteFiles = async (payload: {
     data: payload,
   });
 
+export const updateFileGlobalContext = async (
+  fileId: string,
+  isGlobalContext: boolean,
+): Promise<f.TFile> => {
+  return request.patch(endpoints.updateFileGlobalContext(fileId), { isGlobalContext });
+};
+
 /* Speech */
 
 export const speechToText = (data: FormData): Promise<f.SpeechToTextResponse> => {
