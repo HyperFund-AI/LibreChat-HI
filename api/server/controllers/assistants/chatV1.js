@@ -326,18 +326,20 @@ const chatV1 = async (req, res) => {
         }
       }
 
-      // Get global context files for the user
+      // Get global context files for the user (get full file objects, not just IDs)
       const { getFiles } = require('~/models/File');
       const globalContextFiles = await getFiles(
         { user: req.user.id, isGlobalContext: true },
         null,
-        { file_id: 1 },
+        { text: 0 },
       );
       const globalContextFileIds = globalContextFiles.map((f) => f.file_id);
 
-      file_ids = files.map(({ file_id }) => file_id);
-      if (file_ids.length || thread_file_ids.length || globalContextFileIds.length) {
-        attachedFileIds = new Set([...file_ids, ...thread_file_ids, ...globalContextFileIds]);
+      // Combine regular files with global context files
+      const allFiles = [...files, ...globalContextFiles];
+      file_ids = allFiles.map(({ file_id }) => file_id);
+      if (file_ids.length || thread_file_ids.length) {
+        attachedFileIds = new Set([...file_ids, ...thread_file_ids]);
         if (endpoint === EModelEndpoint.azureAssistants) {
           userMessage.attachments = Array.from(attachedFileIds).map((file_id) => ({
             file_id,

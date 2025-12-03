@@ -419,4 +419,32 @@ router.post('/', async (req, res) => {
   }
 });
 
+router.patch('/:file_id/global-context', async (req, res) => {
+  try {
+    const { file_id } = req.params;
+    const { isGlobalContext } = req.body;
+
+    if (typeof isGlobalContext !== 'boolean') {
+      return res.status(400).json({ message: 'isGlobalContext must be a boolean' });
+    }
+
+    const { getFiles, updateFile } = require('~/models/File');
+    const file = await getFiles({ file_id, user: req.user.id }, null, {});
+
+    if (!file || file.length === 0) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+
+    const updatedFile = await updateFile({
+      file_id,
+      isGlobalContext,
+    });
+
+    res.status(200).json(updatedFile);
+  } catch (error) {
+    logger.error('[/files/:file_id/global-context] Error updating file:', error);
+    res.status(500).json({ message: 'Error updating file', error: error.message });
+  }
+});
+
 module.exports = router;

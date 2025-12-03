@@ -189,3 +189,42 @@ export const useDeleteFilesMutation = (
     },
   });
 };
+
+export const useUpdateFileGlobalContextMutation = (): UseMutationResult<
+  t.TFile, // response data
+  unknown, // error
+  { fileId: string; isGlobalContext: boolean }, // request
+  unknown // context
+> => {
+  const queryClient = useQueryClient();
+  const { showToast } = useToastContext();
+  const localize = useLocalize();
+  return useMutation(['updateFileGlobalContext'], {
+    mutationFn: ({ fileId, isGlobalContext }) =>
+      dataService.updateFileGlobalContext(fileId, isGlobalContext),
+    onSuccess: (data) => {
+      queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (cachefiles) => {
+        if (!cachefiles) {
+          return cachefiles;
+        }
+        return cachefiles.map((file) =>
+          file.file_id === data.file_id ? { ...file, isGlobalContext: data.isGlobalContext } : file,
+        );
+      });
+      showToast({
+        message: localize(
+          data.isGlobalContext
+            ? 'com_ui_file_global_context_enabled'
+            : 'com_ui_file_global_context_disabled',
+        ),
+        status: 'success',
+      });
+    },
+    onError: () => {
+      showToast({
+        message: localize('com_ui_file_global_context_update_error'),
+        status: 'error',
+      });
+    },
+  });
+};

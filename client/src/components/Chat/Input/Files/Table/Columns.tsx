@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/rules-of-hooks */
-import { ArrowUpDown, Database } from 'lucide-react';
+import { ArrowUpDown, Database, Globe } from 'lucide-react';
 import { FileSources, FileContext } from 'librechat-data-provider';
 import {
   Button,
@@ -15,6 +15,8 @@ import FilePreview from '~/components/Chat/Input/Files/FilePreview';
 import { TranslationKeys, useLocalize } from '~/hooks';
 import { SortFilterHeader } from './SortFilterHeader';
 import { formatDate, getFileType } from '~/utils';
+import { useUpdateFileGlobalContextMutation } from '~/data-provider/Files/mutations';
+import React from 'react';
 
 const contextMap: Record<any, TranslationKeys> = {
   [FileContext.avatar]: 'com_ui_avatar',
@@ -23,6 +25,32 @@ const contextMap: Record<any, TranslationKeys> = {
   [FileContext.image_generation]: 'com_ui_image_gen',
   [FileContext.assistants_output]: 'com_ui_assistants_output',
   [FileContext.message_attachment]: 'com_ui_attachment',
+};
+
+const GlobalContextCell = ({ file }: { file: TFile }) => {
+  const updateMutation = useUpdateFileGlobalContextMutation();
+  const localize = useLocalize();
+
+  return (
+    <div className="flex items-center gap-2">
+      <Checkbox
+        checked={file.isGlobalContext ?? false}
+        onCheckedChange={(checked) => {
+          updateMutation.mutate({
+            fileId: file.file_id,
+            isGlobalContext: checked === true,
+          });
+        }}
+        aria-label={localize('com_ui_toggle_global_context')}
+        disabled={updateMutation.isLoading}
+      />
+      {file.isGlobalContext && (
+        <span className="text-xs text-text-secondary">
+          {localize('com_ui_available_all_chats')}
+        </span>
+      )}
+    </div>
+  );
 };
 
 export const columns: ColumnDef<TFile>[] = [
@@ -217,5 +245,22 @@ export const columns: ColumnDef<TFile>[] = [
 
       return `${value}${suffix}`;
     },
+  },
+  {
+    id: 'globalContext',
+    accessorKey: 'isGlobalContext',
+    header: () => {
+      const localize = useLocalize();
+      return (
+        <div className="flex items-center gap-2">
+          <Globe className="h-4 w-4" />
+          <span className="text-xs sm:text-sm">{localize('com_ui_global_context')}</span>
+        </div>
+      );
+    },
+    cell: ({ row }) => {
+      return <GlobalContextCell file={row.original} />;
+    },
+    enableSorting: true,
   },
 ];
