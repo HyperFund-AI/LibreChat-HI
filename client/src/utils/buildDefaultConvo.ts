@@ -28,7 +28,7 @@ function upgradeClaudeModel(
   
   // If it's claude-opus-4-5 without date, upgrade to dated version
   if (model === 'claude-opus-4-5') {
-    return 'claude-opus-4-5-20250420';
+    return 'claude-opus-4-5-20251101';
   }
 
   // Upgrade old Claude 3.5 models
@@ -135,7 +135,7 @@ const buildDefaultConvo = ({
     } else {
       // If no model is set, use the default Claude Opus 4.5 with date suffix
       // Anthropic requires date suffixes for valid model names
-      defaultConvo.model = 'claude-opus-4-5-20250420';
+      defaultConvo.model = 'claude-opus-4-5-20251101';
     }
 
     // Enable web search by default if not explicitly set
