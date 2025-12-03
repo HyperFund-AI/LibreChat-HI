@@ -115,6 +115,7 @@ export type TFile = {
   expiresAt?: string | Date;
   preview?: string;
   metadata?: { fileIdentifier?: string };
+  isGlobalContext?: boolean;
   createdAt?: string | Date;
   updatedAt?: string | Date;
 };

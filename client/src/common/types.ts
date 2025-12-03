@@ -556,6 +556,7 @@ export interface ExtendedFile {
   attached?: boolean;
   embedded?: boolean;
   tool_resource?: string;
+  isGlobalContext?: boolean;
   metadata?: t.TFile['metadata'];
 }
 

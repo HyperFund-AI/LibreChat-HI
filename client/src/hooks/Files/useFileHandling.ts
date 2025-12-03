@@ -183,6 +183,11 @@ const useFileHandling = (params?: UseFileHandling) => {
       }
     }
 
+    // Add isGlobalContext flag if set
+    if (extendedFile.isGlobalContext) {
+      formData.append('isGlobalContext', 'true');
+    }
+
     if (!isAssistantsEndpoint(endpointType ?? endpoint)) {
       if (!agent_id) {
         formData.append('message_file', 'true');
@@ -245,7 +250,7 @@ const useFileHandling = (params?: UseFileHandling) => {
     img.src = preview;
   };
 
-  const handleFiles = async (_files: FileList | File[], _toolResource?: string) => {
+  const handleFiles = async (_files: FileList | File[], _toolResource?: string, _isGlobalContext?: boolean) => {
     abortControllerRef.current = new AbortController();
     const fileList = Array.from(_files);
     /* Validate files */
@@ -294,6 +299,9 @@ const useFileHandling = (params?: UseFileHandling) => {
 
         if (_toolResource != null && _toolResource !== '') {
           initialExtendedFile.tool_resource = _toolResource;
+        }
+        if (_isGlobalContext) {
+          initialExtendedFile.isGlobalContext = true;
         }
 
         // Add file immediately to show in UI

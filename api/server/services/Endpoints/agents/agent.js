@@ -76,6 +76,14 @@ const initializeAgent = async ({
   const provider = agent.provider;
   agent.endpoint = provider;
 
+  // Get global context files for the user
+  const { getFiles } = require('~/models/File');
+  const globalContextFiles = await getFiles(
+    { user: req.user.id, isGlobalContext: true },
+    null,
+    {},
+  );
+
   if (isInitialAgent && conversationId != null && resendFiles) {
     const fileIds = (await getConvoFiles(conversationId)) ?? [];
     /** @type {Set<EToolResources>} */
@@ -86,11 +94,18 @@ const initializeAgent = async ({
       }
     }
     const toolFiles = await getToolFilesByIds(fileIds, toolResourceSet);
-    if (requestFiles.length || toolFiles.length) {
-      currentFiles = await processFiles(requestFiles.concat(toolFiles));
+    // Include global context files
+    const allFiles = [...requestFiles, ...toolFiles, ...globalContextFiles];
+    if (allFiles.length) {
+      currentFiles = await processFiles(allFiles);
     }
-  } else if (isInitialAgent && requestFiles.length) {
-    currentFiles = await processFiles(requestFiles);
+  } else if (isInitialAgent && (requestFiles.length || globalContextFiles.length)) {
+    // Include global context files
+    const allFiles = [...requestFiles, ...globalContextFiles];
+    currentFiles = await processFiles(allFiles);
+  } else if (globalContextFiles.length) {
+    // Include global context files even if no request files
+    currentFiles = await processFiles(globalContextFiles);
   }
 
   if (currentFiles && currentFiles.length) {

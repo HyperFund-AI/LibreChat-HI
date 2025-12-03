@@ -375,6 +375,8 @@ router.post('/', async (req, res) => {
 
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
+    // Extract isGlobalContext from request body (can be 'true' string or boolean)
+    metadata.isGlobalContext = req.body.isGlobalContext === 'true' || req.body.isGlobalContext === true;
 
     if (isAssistantsEndpoint(metadata.endpoint)) {
       return await processFileUpload({ req, res, metadata });

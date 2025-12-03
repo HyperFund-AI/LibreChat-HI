@@ -206,8 +206,17 @@ const chatV2 = async (req, res) => {
         }
       }
 
-      if (files.length || thread_file_ids.length) {
-        attachedFileIds = new Set([...file_ids, ...thread_file_ids]);
+      // Get global context files for the user
+      const { getFiles } = require('~/models/File');
+      const globalContextFiles = await getFiles(
+        { user: req.user.id, isGlobalContext: true },
+        null,
+        { file_id: 1 },
+      );
+      const globalContextFileIds = globalContextFiles.map((f) => f.file_id);
+
+      if (files.length || thread_file_ids.length || globalContextFileIds.length) {
+        attachedFileIds = new Set([...file_ids, ...thread_file_ids, ...globalContextFileIds]);
 
         let attachmentIndex = 0;
         for (const file of files) {
