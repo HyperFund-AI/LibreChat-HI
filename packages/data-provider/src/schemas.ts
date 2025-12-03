@@ -353,7 +353,7 @@ const DEFAULT_MAX_OUTPUT = 8192 as const;
 const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096 as const;
 export const anthropicSettings = {
   model: {
-    default: 'claude-opus-4-5' as const,
+    default: 'claude-opus-4-5-20250420' as const,
   },
   temperature: {
     min: 0 as const,
