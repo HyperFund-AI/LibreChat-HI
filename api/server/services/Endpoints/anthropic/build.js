@@ -1,4 +1,5 @@
 const { removeNullishValues, anthropicSettings } = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
 const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
 
 /**
@@ -75,11 +76,19 @@ const buildOptions = (endpoint, parsedBody) => {
   // Upgrade Claude models to Opus 4.5 if needed
   // IMPORTANT: Preserve dated model names - Anthropic requires date suffixes
   if (modelOptions.model) {
+    const originalModel = modelOptions.model;
     const upgraded = upgradeClaudeModel(modelOptions.model);
     // Only upgrade if the model actually changed AND the new model isn't just base name
     // If it's already a dated Opus 4.5, don't normalize it
     if (upgraded !== modelOptions.model) {
+      logger.debug(
+        `[Anthropic] Upgrading model from "${originalModel}" to "${upgraded}" for endpoint ${endpoint}`,
+      );
       modelOptions.model = upgraded;
+    } else {
+      logger.debug(
+        `[Anthropic] Using model "${modelOptions.model}" for endpoint ${endpoint} (no upgrade needed)`,
+      );
     }
   }
 
