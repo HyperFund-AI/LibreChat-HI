@@ -250,7 +250,11 @@ const useFileHandling = (params?: UseFileHandling) => {
     img.src = preview;
   };
 
-  const handleFiles = async (_files: FileList | File[], _toolResource?: string, _isGlobalContext?: boolean) => {
+  const handleFiles = async (
+    _files: FileList | File[],
+    _toolResource?: string,
+    _isGlobalContext?: boolean,
+  ) => {
     abortControllerRef.current = new AbortController();
     const fileList = Array.from(_files);
     /* Validate files */

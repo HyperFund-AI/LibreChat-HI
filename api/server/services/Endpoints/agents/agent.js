@@ -18,7 +18,7 @@ const {
 const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
 const { getProviderConfig } = require('~/server/services/Endpoints');
 const { processFiles } = require('~/server/services/Files/process');
-const { getFiles, getToolFilesByIds } = require('~/models/File');
+const { getToolFilesByIds } = require('~/models/File');
 const { getConvoFiles } = require('~/models/Conversation');
 
 /**
@@ -78,11 +78,7 @@ const initializeAgent = async ({
 
   // Get global context files for the user
   const { getFiles } = require('~/models/File');
-  const globalContextFiles = await getFiles(
-    { user: req.user.id, isGlobalContext: true },
-    null,
-    {},
-  );
+  const globalContextFiles = await getFiles({ user: req.user.id, isGlobalContext: true }, null, {});
 
   if (isInitialAgent && conversationId != null && resendFiles) {
     const fileIds = (await getConvoFiles(conversationId)) ?? [];
