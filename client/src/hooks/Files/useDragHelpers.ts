@@ -42,7 +42,7 @@ export default function useDragHelpers() {
   const { handleFiles } = useFileHandling();
 
   const handleOptionSelect = useCallback(
-    (toolResource: EToolResources | undefined) => {
+    (toolResource: EToolResources | undefined, isGlobalContext?: boolean) => {
       /** File search is not automatically enabled to simulate legacy behavior */
       if (toolResource && toolResource !== EToolResources.file_search) {
         setEphemeralAgent((prev) => ({
@@ -50,7 +50,7 @@ export default function useDragHelpers() {
           [toolResource]: true,
         }));
       }
-      handleFiles(draggedFiles, toolResource);
+      handleFiles(draggedFiles, toolResource, isGlobalContext);
       setShowModal(false);
       setDraggedFiles([]);
     },

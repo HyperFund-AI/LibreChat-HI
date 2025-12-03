@@ -24,7 +24,7 @@ import { ephemeralAgentByConvoId } from '~/store';
 import { useDragDropContext } from '~/Providers';
 
 interface DragDropModalProps {
-  onOptionSelect: (option: EToolResources | undefined) => void;
+  onOptionSelect: (option: EToolResources | undefined, isGlobalContext?: boolean) => void;
   files: File[];
   isVisible: boolean;
   setShowModal: (showModal: boolean) => void;
@@ -40,6 +40,7 @@ interface FileOption {
 const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragDropModalProps) => {
   const localize = useLocalize();
   const { agentsConfig } = useGetAgentsConfig();
+  const [isGlobalContext, setIsGlobalContext] = React.useState(false);
   /** TODO: Ephemeral Agent Capabilities
    * Allow defining agent capabilities on a per-endpoint basis
    * Use definition for agents endpoint for ephemeral agents
@@ -51,6 +52,10 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     agentId,
     ephemeralAgent,
   );
+
+  // Check if files are documents (not images)
+  const areDocuments = files.some((file) => file.type === 'application/pdf' ||
+    (file.type && !file.type.startsWith('image/') && !file.type.startsWith('video/') && !file.type.startsWith('audio/')));
 
   const options = useMemo(() => {
     const _options: FileOption[] = [];
@@ -134,13 +139,24 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
                 option.condition !== false && (
                   <button
                     key={index}
-                    onClick={() => onOptionSelect(option.value)}
+                    onClick={() => onOptionSelect(option.value, isGlobalContext)}
                     className="flex items-center gap-2 rounded-lg p-2 hover:bg-surface-active-alt"
                   >
                     {option.icon}
                     <span>{option.label}</span>
                   </button>
                 ),
+            )}
+            {areDocuments && (
+              <label className="flex items-center gap-2 rounded-lg p-2 hover:bg-surface-active-alt cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isGlobalContext}
+                  onChange={(e) => setIsGlobalContext(e.target.checked)}
+                  className="rounded"
+                />
+                <span className="text-sm">Use as context for all chats</span>
+              </label>
             )}
           </div>
         }

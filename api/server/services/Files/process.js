@@ -488,6 +488,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
       source,
       height,
       width,
+      isGlobalContext: metadata.isGlobalContext || false,
     },
     true,
   );
@@ -727,6 +728,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     source,
     height,
     width,
+    isGlobalContext: metadata.isGlobalContext || false,
   });
 
   const result = await createFile(fileInfo, true);
