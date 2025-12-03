@@ -217,7 +217,7 @@ export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
     (spec) =>
       spec.preset?.endpoint === EModelEndpoint.anthropic &&
       (spec.preset?.model === 'claude-opus-4-5' ||
-        spec.preset?.model === 'claude-opus-4-5-20250420' ||
+        spec.preset?.model === 'claude-opus-4-5-20251101' ||
         spec.preset?.model?.startsWith('claude-opus-4-5-')),
   );
 
@@ -252,7 +252,7 @@ export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
     if (!preset.model) {
       // If no model is specified, use the default Claude Opus 4.5 with date suffix
       // Anthropic requires date suffixes for valid model names
-      preset.model = 'claude-opus-4-5-20250420';
+      preset.model = 'claude-opus-4-5-20251101';
     } else if (preset.model.startsWith('claude-opus-4-5-')) {
       // Keep existing dated Opus 4.5 models as-is - don't modify them
       // This preserves model names like claude-opus-4-5-20251101
@@ -277,7 +277,7 @@ export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
       preset.model.startsWith('claude-sonnet-4-5')
     ) {
       // Use dated version - Anthropic requires date suffixes
-      preset.model = 'claude-opus-4-5-20250420';
+      preset.model = 'claude-opus-4-5-20251101';
     }
 
     // Enable web search by default if not explicitly set

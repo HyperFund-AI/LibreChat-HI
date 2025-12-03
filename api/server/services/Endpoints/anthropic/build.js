@@ -16,25 +16,20 @@ function upgradeClaudeModel(model) {
     return model; // Keep the dated version as-is
   }
 
-  // If it's claude-opus-4-5 without date, we need to check available models
-  // For now, we'll upgrade old models to claude-opus-4-5-20250420 as a fallback
-  // The validation middleware will catch if it's not available
+  // If it's claude-opus-4-5 without date, upgrade to the available dated version
   if (model === 'claude-opus-4-5') {
-    // Try common dated versions - validation will catch if not available
-    return 'claude-opus-4-5-20250420'; // Fallback to a known date format
+    return 'claude-opus-4-5-20251101';
   }
 
   // Upgrade old Claude 3.5 models to Opus 4.5 with date
-  // Use a dated version as Anthropic requires date suffixes
+  // Use the available dated version: claude-opus-4-5-20251101
   if (
     model === 'claude-3-5-sonnet-latest' ||
     model === 'claude-3-5-sonnet-20241022' ||
     model === 'claude-3-5-sonnet-20240620' ||
     model.startsWith('claude-3-5-sonnet')
   ) {
-    // Try to preserve a date pattern if possible, otherwise use a common dated version
-    // The validation middleware will ensure it's valid
-    return 'claude-opus-4-5-20250420';
+    return 'claude-opus-4-5-20251101';
   }
 
   // Upgrade Haiku models to Opus 4.5 with date
@@ -45,7 +40,7 @@ function upgradeClaudeModel(model) {
     model.startsWith('claude-3-5-haiku') ||
     model.startsWith('claude-haiku-3')
   ) {
-    return 'claude-opus-4-5-20250420';
+    return 'claude-opus-4-5-20251101';
   }
 
   // Upgrade Sonnet 4.5 to Opus 4.5 with date
@@ -54,7 +49,7 @@ function upgradeClaudeModel(model) {
     model === 'claude-sonnet-4-5-20250929' ||
     model.startsWith('claude-sonnet-4-5')
   ) {
-    return 'claude-opus-4-5-20250420';
+    return 'claude-opus-4-5-20251101';
   }
 
   return model;
