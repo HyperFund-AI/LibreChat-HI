@@ -31,17 +31,17 @@ function upgradeClaudeModel(
     return 'claude-opus-4-5-20251101';
   }
 
-  // Upgrade old Claude 3.5 models
+  // Upgrade old Claude 3.5 models to Opus 4.5 with date
   if (
     model === 'claude-3-5-sonnet-latest' ||
     model === 'claude-3-5-sonnet-20241022' ||
     model === 'claude-3-5-sonnet-20240620' ||
     model.startsWith('claude-3-5-sonnet')
   ) {
-    return 'claude-opus-4-5';
+    return 'claude-opus-4-5-20251101';
   }
 
-  // Upgrade Haiku models to Opus
+  // Upgrade Haiku models to Opus 4.5 with date
   if (
     model === 'claude-haiku-4-5' ||
     model === 'claude-haiku-4-5-20251001' ||
@@ -49,16 +49,16 @@ function upgradeClaudeModel(
     model.startsWith('claude-3-5-haiku') ||
     model.startsWith('claude-haiku-3')
   ) {
-    return 'claude-opus-4-5';
+    return 'claude-opus-4-5-20251101';
   }
 
-  // Upgrade Sonnet 4.5 to Opus 4.5
+  // Upgrade Sonnet 4.5 to Opus 4.5 with date
   if (
     model === 'claude-sonnet-4-5' ||
     model === 'claude-sonnet-4-5-20250929' ||
     model.startsWith('claude-sonnet-4-5')
   ) {
-    return 'claude-opus-4-5';
+    return 'claude-opus-4-5-20251101';
   }
 
   return model;
