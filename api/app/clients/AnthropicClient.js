@@ -744,7 +744,7 @@ class AnthropicClient extends BaseClient {
       modelOptions.stream = true;
     }
 
-    logger.debug('modelOptions', { modelOptions });
+    logger.warn(`[ANTHROPIC CLIENT] Model: ${modelOptions.model} | Endpoint: ${this.options.endpoint}`);
     const metadata = {
       user_id: this.user,
     };
@@ -805,7 +805,9 @@ class AnthropicClient extends BaseClient {
       requestOptions.messages = addCacheControl(requestOptions.messages);
     }
 
-    logger.debug('[AnthropicClient]', { ...requestOptions });
+    logger.warn(
+      `[ANTHROPIC API REQUEST] Model: ${requestOptions.model} | Messages: ${!!requestOptions.messages} | Prompt: ${!!requestOptions.prompt}`,
+    );
     const handlers = createStreamEventHandlers(this.options.res);
     this.streamHandler = new SplitStreamHandler({
       accumulate: true,

@@ -75,26 +75,36 @@ const buildOptions = (endpoint, parsedBody) => {
 
   // Upgrade Claude models to Opus 4.5 if needed
   // IMPORTANT: Preserve dated model names - Anthropic requires date suffixes
+  let finalModelLabel = modelLabel;
   if (modelOptions.model) {
     const originalModel = modelOptions.model;
     const upgraded = upgradeClaudeModel(modelOptions.model);
     // Only upgrade if the model actually changed AND the new model isn't just base name
     // If it's already a dated Opus 4.5, don't normalize it
     if (upgraded !== modelOptions.model) {
-      logger.debug(
-        `[Anthropic] Upgrading model from "${originalModel}" to "${upgraded}" for endpoint ${endpoint}`,
+      logger.warn(
+        `[MODEL UPGRADE] Anthropic: "${originalModel}" -> "${upgraded}" for endpoint ${endpoint}`,
       );
       modelOptions.model = upgraded;
     } else {
-      logger.debug(
-        `[Anthropic] Using model "${modelOptions.model}" for endpoint ${endpoint} (no upgrade needed)`,
+      logger.warn(
+        `[MODEL] Anthropic: Using "${modelOptions.model}" for endpoint ${endpoint}`,
       );
+    }
+    
+    // Automatically set modelLabel for Opus 4.5 if not already set
+    // This helps the model correctly identify itself, similar to Claude's web interface
+    if (
+      modelOptions.model.startsWith('claude-opus-4-5-') &&
+      !finalModelLabel
+    ) {
+      finalModelLabel = 'Claude Opus 4.5';
     }
   }
 
   const endpointOption = removeNullishValues({
     endpoint,
-    modelLabel,
+    modelLabel: finalModelLabel,
     promptPrefix,
     resendFiles,
     promptCache,
