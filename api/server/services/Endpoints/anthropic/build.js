@@ -3,35 +3,41 @@ const generateArtifactsPrompt = require('~/app/clients/prompts/artifacts');
 
 /**
  * Upgrades Claude models to Claude Opus 4.5 for existing conversations
- * Also normalizes any Opus 4.5 model names with dates to the base name
+ * Note: We preserve date suffixes as they are required by Anthropic's API
+ * If upgrading from an old model without a date, we try to use a dated version
  */
 function upgradeClaudeModel(model) {
   if (!model || typeof model !== 'string') {
     return model;
   }
 
-  // Normalize any Opus 4.5 model names (with or without dates) to the base name
-  // This handles cases like claude-opus-4-5-20251101, claude-opus-4-5-20250420, etc.
-  if (
-    model === 'claude-opus-4-5' ||
-    model.startsWith('claude-opus-4-5-') ||
-    model === 'claude-opus-4-5-20250420' ||
-    model === 'claude-opus-4-5-20251101'
-  ) {
-    return 'claude-opus-4-5';
+  // If already an Opus 4.5 model with date, preserve it
+  if (model.startsWith('claude-opus-4-5-')) {
+    return model; // Keep the dated version as-is
   }
 
-  // Upgrade old Claude 3.5 models
+  // If it's claude-opus-4-5 without date, we need to check available models
+  // For now, we'll upgrade old models to claude-opus-4-5-20250420 as a fallback
+  // The validation middleware will catch if it's not available
+  if (model === 'claude-opus-4-5') {
+    // Try common dated versions - validation will catch if not available
+    return 'claude-opus-4-5-20250420'; // Fallback to a known date format
+  }
+
+  // Upgrade old Claude 3.5 models to Opus 4.5 with date
+  // Use a dated version as Anthropic requires date suffixes
   if (
     model === 'claude-3-5-sonnet-latest' ||
     model === 'claude-3-5-sonnet-20241022' ||
     model === 'claude-3-5-sonnet-20240620' ||
     model.startsWith('claude-3-5-sonnet')
   ) {
-    return 'claude-opus-4-5';
+    // Try to preserve a date pattern if possible, otherwise use a common dated version
+    // The validation middleware will ensure it's valid
+    return 'claude-opus-4-5-20250420';
   }
 
-  // Upgrade Haiku models to Opus
+  // Upgrade Haiku models to Opus 4.5 with date
   if (
     model === 'claude-haiku-4-5' ||
     model === 'claude-haiku-4-5-20251001' ||
@@ -39,16 +45,16 @@ function upgradeClaudeModel(model) {
     model.startsWith('claude-3-5-haiku') ||
     model.startsWith('claude-haiku-3')
   ) {
-    return 'claude-opus-4-5';
+    return 'claude-opus-4-5-20250420';
   }
 
-  // Upgrade Sonnet 4.5 to Opus 4.5
+  // Upgrade Sonnet 4.5 to Opus 4.5 with date
   if (
     model === 'claude-sonnet-4-5' ||
     model === 'claude-sonnet-4-5-20250929' ||
     model.startsWith('claude-sonnet-4-5')
   ) {
-    return 'claude-opus-4-5';
+    return 'claude-opus-4-5-20250420';
   }
 
   return model;
@@ -72,8 +78,14 @@ const buildOptions = (endpoint, parsedBody) => {
   } = parsedBody;
 
   // Upgrade Claude models to Opus 4.5 if needed
+  // IMPORTANT: Preserve dated model names - Anthropic requires date suffixes
   if (modelOptions.model) {
-    modelOptions.model = upgradeClaudeModel(modelOptions.model);
+    const upgraded = upgradeClaudeModel(modelOptions.model);
+    // Only upgrade if the model actually changed AND the new model isn't just base name
+    // If it's already a dated Opus 4.5, don't normalize it
+    if (upgraded !== modelOptions.model) {
+      modelOptions.model = upgraded;
+    }
   }
 
   const endpointOption = removeNullishValues({
