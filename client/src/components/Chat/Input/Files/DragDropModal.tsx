@@ -54,8 +54,14 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
   );
 
   // Check if files are documents (not images)
-  const areDocuments = files.some((file) => file.type === 'application/pdf' ||
-    (file.type && !file.type.startsWith('image/') && !file.type.startsWith('video/') && !file.type.startsWith('audio/')));
+  const areDocuments = files.some(
+    (file) =>
+      file.type === 'application/pdf' ||
+      (file.type &&
+        !file.type.startsWith('image/') &&
+        !file.type.startsWith('video/') &&
+        !file.type.startsWith('audio/')),
+  );
 
   const options = useMemo(() => {
     const _options: FileOption[] = [];
@@ -148,14 +154,14 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
                 ),
             )}
             {areDocuments && (
-              <label className="flex items-center gap-2 rounded-lg p-2 hover:bg-surface-active-alt cursor-pointer">
+              <label className="flex cursor-pointer items-center gap-2 rounded-lg p-2 hover:bg-surface-active-alt">
                 <input
                   type="checkbox"
                   checked={isGlobalContext}
                   onChange={(e) => setIsGlobalContext(e.target.checked)}
                   className="rounded"
                 />
-                <span className="text-sm">Use as context for all chats</span>
+                <span className="text-sm">{localize('com_ui_use_as_global_context')}</span>
               </label>
             )}
           </div>
