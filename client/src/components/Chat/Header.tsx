@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useMediaQuery } from '@librechat/client';
 import { useOutletContext } from 'react-router-dom';
+import { useRecoilValue } from 'recoil';
 import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { ContextType } from '~/common';
 import ModelSelector from './Menus/Endpoints/ModelSelector';
@@ -13,6 +14,7 @@ import AddMultiConvo from './AddMultiConvo';
 import { useHasAccess } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import { AnimatePresence, motion } from 'framer-motion';
+import store from '~/store';
 
 const defaultInterface = getConfigDefaults().interface;
 
@@ -37,6 +39,7 @@ export default function Header() {
   });
 
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const developerMode = useRecoilValue(store.developerMode);
 
   // Debug: Show current model (inconspicuous)
   const currentModel = conversation?.model ?? 'N/A';
@@ -73,9 +76,11 @@ export default function Header() {
                 />
                 <TemporaryChat />
                 {/* Debug: Inconspicuous model display */}
-                <span className="text-[10px] font-normal text-text-secondary opacity-50">
-                  {currentModel}
-                </span>
+                {developerMode && (
+                  <span className="text-[10px] font-normal text-text-secondary opacity-50">
+                    {currentModel}
+                  </span>
+                )}
               </>
             )}
           </div>
@@ -87,9 +92,11 @@ export default function Header() {
             />
             <TemporaryChat />
             {/* Debug: Inconspicuous model display */}
-            <span className="text-[10px] font-normal text-text-secondary opacity-50">
-              {currentModel}
-            </span>
+            {developerMode && (
+              <span className="text-[10px] font-normal text-text-secondary opacity-50">
+                {currentModel}
+              </span>
+            )}
           </div>
         )}
       </div>

@@ -26,6 +26,7 @@ const localStorageAtoms = {
     true,
   ),
   keepScreenAwake: atomWithLocalStorage('keepScreenAwake', true),
+  developerMode: atomWithLocalStorage('developerMode', false),
 
   // Chat settings
   enterToSend: atomWithLocalStorage('enterToSend', true),
