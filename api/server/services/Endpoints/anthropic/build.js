@@ -91,17 +91,12 @@ const buildOptions = (endpoint, parsedBody) => {
       );
       modelOptions.model = upgraded;
     } else {
-        logger.warn(
-        `[MODEL] Anthropic: Using "${modelOptions.model}" for endpoint ${endpoint}`,
-      );
+      logger.warn(`[MODEL] Anthropic: Using "${modelOptions.model}" for endpoint ${endpoint}`);
     }
 
     // Automatically set modelLabel for Opus 4.5 if not already set
     // This helps the model correctly identify itself, similar to Claude's web interface
-    if (
-      modelOptions.model.startsWith('claude-opus-4-5-') &&
-      !finalModelLabel
-    ) {
+    if (modelOptions.model.startsWith('claude-opus-4-5-') && !finalModelLabel) {
       finalModelLabel = 'Claude Opus 4.5';
     }
   }
