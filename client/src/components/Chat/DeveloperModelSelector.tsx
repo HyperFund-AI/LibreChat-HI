@@ -39,8 +39,8 @@ export default function DeveloperModelSelector() {
     if (availableModels.length === 0) {
       if (developerMode) {
         console.warn('[DeveloperModelSelector] No models available from API. This could indicate:');
-        console.warn('  - API key doesn\'t have access to models');
-        console.warn('  - Models haven\'t loaded yet');
+        console.warn("  - API key doesn't have access to models");
+        console.warn("  - Models haven't loaded yet");
         console.warn('  - API endpoint issue');
       }
       return [];
@@ -51,10 +51,8 @@ export default function DeveloperModelSelector() {
       // Match any Sonnet model:
       // - claude-sonnet-* (any version)
       // - claude-3-*-sonnet-* (Claude 3.x Sonnet models)
-      const matches = 
-        model.includes('sonnet') && 
-        model.startsWith('claude');
-      
+      const matches = model.includes('sonnet') && model.startsWith('claude');
+
       if (developerMode && matches) {
         console.log('[DeveloperModelSelector] ✓ Found Sonnet model:', model);
       }
@@ -66,10 +64,8 @@ export default function DeveloperModelSelector() {
       // Match any Opus model:
       // - claude-opus-* (any version)
       // - claude-3-*-opus-* (Claude 3.x Opus models)
-      const matches = 
-        model.includes('opus') && 
-        model.startsWith('claude');
-      
+      const matches = model.includes('opus') && model.startsWith('claude');
+
       if (developerMode && matches) {
         console.log('[DeveloperModelSelector] ✓ Found Opus model:', model);
       }
@@ -82,87 +78,89 @@ export default function DeveloperModelSelector() {
       const versionMatch = model.match(/claude-(?:sonnet|opus)-(\d+)-(\d+)/);
       const major = versionMatch ? parseInt(versionMatch[1], 10) : 0;
       const minor = versionMatch ? parseInt(versionMatch[2], 10) : 0;
-      
+
       // Extract date suffix (YYYYMMDD format)
       const dateMatch = model.match(/-(\d{8})$/);
       const date = dateMatch ? dateMatch[1] : null;
-      
+
       // Handle Claude 3.x models (e.g., claude-3-5-sonnet)
       const claude3Match = model.match(/claude-3-(\d+)-(?:sonnet|opus)/);
       if (claude3Match) {
         const claude3Minor = parseInt(claude3Match[1], 10);
         return { major: 3, minor: claude3Minor, patch: 0, date };
       }
-      
+
       return { major, minor, patch: 0, date };
     };
 
     // Sort and get the latest Sonnet model
-    const latestSonnet = allSonnetModels.length > 0
-      ? allSonnetModels.sort((a, b) => {
-          const versionA = getModelVersion(a);
-          const versionB = getModelVersion(b);
-          
-          // Compare by major version first
-          if (versionA.major !== versionB.major) {
-            return versionB.major - versionA.major;
-          }
-          
-          // Then minor version
-          if (versionA.minor !== versionB.minor) {
-            return versionB.minor - versionA.minor;
-          }
-          
-          // Then by date (if present)
-          if (versionA.date && versionB.date) {
-            return versionB.date.localeCompare(versionA.date);
-          }
-          
-          // Models with dates come before models without dates
-          if (versionA.date && !versionB.date) return -1;
-          if (!versionA.date && versionB.date) return 1;
-          
-          return 0;
-        })[0]
-      : null;
+    const latestSonnet =
+      allSonnetModels.length > 0
+        ? allSonnetModels.sort((a, b) => {
+            const versionA = getModelVersion(a);
+            const versionB = getModelVersion(b);
+
+            // Compare by major version first
+            if (versionA.major !== versionB.major) {
+              return versionB.major - versionA.major;
+            }
+
+            // Then minor version
+            if (versionA.minor !== versionB.minor) {
+              return versionB.minor - versionA.minor;
+            }
+
+            // Then by date (if present)
+            if (versionA.date && versionB.date) {
+              return versionB.date.localeCompare(versionA.date);
+            }
+
+            // Models with dates come before models without dates
+            if (versionA.date && !versionB.date) return -1;
+            if (!versionA.date && versionB.date) return 1;
+
+            return 0;
+          })[0]
+        : null;
 
     // Sort and get the latest Opus model
-    const latestOpus = allOpusModels.length > 0
-      ? allOpusModels.sort((a, b) => {
-          const versionA = getModelVersion(a);
-          const versionB = getModelVersion(b);
-          
-          // Compare by major version first
-          if (versionA.major !== versionB.major) {
-            return versionB.major - versionA.major;
-          }
-          
-          // Then minor version
-          if (versionA.minor !== versionB.minor) {
-            return versionB.minor - versionA.minor;
-          }
-          
-          // Then by date (if present)
-          if (versionA.date && versionB.date) {
-            return versionB.date.localeCompare(versionA.date);
-          }
-          
-          // Models with dates come before models without dates
-          if (versionA.date && !versionB.date) return -1;
-          if (!versionA.date && versionB.date) return 1;
-          
-          return 0;
-        })[0]
-      : null;
+    const latestOpus =
+      allOpusModels.length > 0
+        ? allOpusModels.sort((a, b) => {
+            const versionA = getModelVersion(a);
+            const versionB = getModelVersion(b);
+
+            // Compare by major version first
+            if (versionA.major !== versionB.major) {
+              return versionB.major - versionA.major;
+            }
+
+            // Then minor version
+            if (versionA.minor !== versionB.minor) {
+              return versionB.minor - versionA.minor;
+            }
+
+            // Then by date (if present)
+            if (versionA.date && versionB.date) {
+              return versionB.date.localeCompare(versionA.date);
+            }
+
+            // Models with dates come before models without dates
+            if (versionA.date && !versionB.date) return -1;
+            if (!versionA.date && versionB.date) return 1;
+
+            return 0;
+          })[0]
+        : null;
 
     const models: string[] = [];
-    
+
     // Only include models that are actually available from the API
     // Don't use defaults - if API doesn't return it, it's likely not available
     if (latestOpus) {
       models.push(latestOpus);
     }
-    
+
     if (latestSonnet) {
       models.push(latestSonnet);
     }
@@ -174,17 +172,21 @@ export default function DeveloperModelSelector() {
       console.log('[DeveloperModelSelector] All Opus models found:', allOpusModels);
       console.log('[DeveloperModelSelector] Latest Sonnet selected:', latestSonnet);
       console.log('[DeveloperModelSelector] Latest Opus selected:', latestOpus);
-      
+
       if (models.length === 0) {
         console.warn('[DeveloperModelSelector] ⚠️ No Sonnet or Opus models found in API response');
         console.warn('[DeveloperModelSelector] Available models:', availableModels);
       } else if (models.length === 1) {
         console.warn('[DeveloperModelSelector] ⚠️ Only found one model:', models[0]);
         if (!latestSonnet) {
-          console.warn('[DeveloperModelSelector] Sonnet not available - check API key permissions or model availability');
+          console.warn(
+            '[DeveloperModelSelector] Sonnet not available - check API key permissions or model availability',
+          );
         }
         if (!latestOpus) {
-          console.warn('[DeveloperModelSelector] Opus not available - check API key permissions or model availability');
+          console.warn(
+            '[DeveloperModelSelector] Opus not available - check API key permissions or model availability',
+          );
         }
       }
     }
@@ -192,32 +194,37 @@ export default function DeveloperModelSelector() {
     return models;
   }, [availableModels, isAnthropicEndpoint, developerMode]);
 
-  // Default to Opus if current model is not in the filtered list
+  // Default to Sonnet if current model is not in the filtered list
   const selectedModel = useMemo(() => {
     if (filteredModels.includes(currentModel)) {
       return currentModel;
     }
-    // Default to Opus
-    return filteredModels.find((m) => m.includes('opus')) ?? filteredModels[0] ?? '';
+    // Default to Sonnet (claude-sonnet-4-20250514)
+    return filteredModels.find((m) => m.includes('sonnet')) ?? filteredModels[0] ?? '';
   }, [currentModel, filteredModels]);
 
-  // Set default to Opus if current model is not in filtered list
+  // Set default to Sonnet if current model is not in filtered list
   useEffect(() => {
     if (!isAnthropicEndpoint || filteredModels.length === 0) {
       return;
     }
 
-    const defaultOpus = filteredModels.find((m) => m.includes('opus'));
-    if (!defaultOpus) {
+    // Prefer claude-sonnet-4-20250514, fallback to any Sonnet, then any model
+    const defaultSonnet =
+      filteredModels.find((m) => m.includes('sonnet-4-20250514')) ??
+      filteredModels.find((m) => m.includes('sonnet')) ??
+      filteredModels[0];
+
+    if (!defaultSonnet) {
       return;
     }
 
-    // If current model is not in filtered list, set to default Opus
+    // If current model is not in filtered list, set to default Sonnet
     if (currentModel && !filteredModels.includes(currentModel)) {
-      setOption('model')(defaultOpus);
+      setOption('model')(defaultSonnet);
     } else if (!currentModel) {
-      // If no model is set, default to Opus
-      setOption('model')(defaultOpus);
+      // If no model is set, default to Sonnet
+      setOption('model')(defaultSonnet);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredModels.join(','), currentModel, isAnthropicEndpoint]); // Run when filtered models or current model changes

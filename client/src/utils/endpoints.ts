@@ -195,7 +195,7 @@ export function applyModelSpecEphemeralAgent({
 
 /**
  * Gets default model spec from config and user preferences.
- * Priority: admin default → last selected → Claude Opus 4.5 → first spec (when prioritize=true or modelSelect disabled).
+ * Priority: admin default → last selected → Claude Sonnet 4 → first spec (when prioritize=true or modelSelect disabled).
  * Otherwise: admin default or last conversation spec.
  */
 export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
@@ -211,20 +211,19 @@ export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
   }
   const defaultSpec = list?.find((spec) => spec.default);
 
-  // Prefer Claude Opus 4.5 if no default is set
-  // Look for any Opus 4.5 model (with or without date suffix)
-  const claudeOpus45Spec = list?.find(
+  // Prefer Claude Sonnet 4 if no default is set
+  // Look for any Sonnet 4 model (with or without date suffix)
+  const claudeSonnet4Spec = list?.find(
     (spec) =>
       spec.preset?.endpoint === EModelEndpoint.anthropic &&
-      (spec.preset?.model === 'claude-opus-4-5' ||
-        spec.preset?.model === 'claude-opus-4-5-20251101' ||
-        spec.preset?.model?.startsWith('claude-opus-4-5-')),
+      (spec.preset?.model === 'claude-sonnet-4-20250514' ||
+        spec.preset?.model?.startsWith('claude-sonnet-4-')),
   );
 
   if (prioritize === true || !interfaceConfig?.modelSelect) {
     const lastSelectedSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
     const lastSelectedSpec = list?.find((spec) => spec.name === lastSelectedSpecName);
-    return { default: defaultSpec || lastSelectedSpec || claudeOpus45Spec || list?.[0] };
+    return { default: defaultSpec || lastSelectedSpec || claudeSonnet4Spec || list?.[0] };
   } else if (defaultSpec) {
     return { default: defaultSpec };
   }
@@ -232,9 +231,9 @@ export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
     localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0') ?? '{}',
   );
   if (!lastConversationSetup.spec) {
-    // If no last conversation, prefer Claude Opus 4.5
-    if (claudeOpus45Spec) {
-      return { default: claudeOpus45Spec };
+    // If no last conversation, prefer Claude Sonnet 4
+    if (claudeSonnet4Spec) {
+      return { default: claudeSonnet4Spec };
     }
     return;
   }
@@ -247,12 +246,12 @@ export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
   }
   const preset = { ...modelSpec.preset };
 
-  // Automatically upgrade to Claude Opus 4.5 for Anthropic endpoint
+  // Automatically set default to Claude Sonnet 4 for Anthropic endpoint
   if (preset.endpoint === EModelEndpoint.anthropic) {
     if (!preset.model) {
-      // If no model is specified, use the default Claude Opus 4.5 with date suffix
+      // If no model is specified, use the default Claude Sonnet 4 with date suffix
       // Anthropic requires date suffixes for valid model names
-      preset.model = 'claude-opus-4-5-20251101';
+      preset.model = 'claude-sonnet-4-20250514';
     } else if (preset.model.startsWith('claude-opus-4-5-')) {
       // Keep existing dated Opus 4.5 models as-is - don't modify them
       // This preserves model names like claude-opus-4-5-20251101

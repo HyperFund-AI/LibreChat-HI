@@ -133,9 +133,9 @@ const buildDefaultConvo = ({
     if (defaultConvo.model) {
       defaultConvo.model = upgradeClaudeModel(defaultConvo.model, endpoint) ?? defaultConvo.model;
     } else {
-      // If no model is set, use the default Claude Opus 4.5 with date suffix
+      // If no model is set, use the default Claude Sonnet 4 with date suffix
       // Anthropic requires date suffixes for valid model names
-      defaultConvo.model = 'claude-opus-4-5-20251101';
+      defaultConvo.model = 'claude-sonnet-4-20250514';
     }
 
     // Enable web search by default if not explicitly set
