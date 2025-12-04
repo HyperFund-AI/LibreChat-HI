@@ -1228,6 +1228,7 @@ export const anthropicBaseSchema = tConversationSchema.pick({
   model: true,
   modelLabel: true,
   promptPrefix: true,
+  system: true,
   temperature: true,
   maxOutputTokens: true,
   topP: true,
