@@ -100,7 +100,7 @@ const UploadPersonaDialog: React.FC<UploadPersonaDialogProps> = ({ open, onOpenC
   return (
     <OGDialog open={open} onOpenChange={handleOpenChange}>
       <OGDialogTemplate
-        title="Upload Persona File"
+        title={localize('com_endpoint_upload_persona_file')}
         className="z-[90] w-11/12 sm:w-1/2 md:w-2/5"
         overlayClassName="z-[80]"
         showCloseButton={true}
@@ -108,7 +108,7 @@ const UploadPersonaDialog: React.FC<UploadPersonaDialogProps> = ({ open, onOpenC
           <div className="flex w-full flex-col items-center gap-4">
             <div className="grid w-full items-center gap-2">
               <Label htmlFor="persona-file" className="text-left text-sm font-medium">
-                Persona File (.md, .txt, or .markdown)
+                {localize('com_endpoint_persona_file_label')}
               </Label>
               <input
                 ref={fileInputRef}
@@ -124,19 +124,22 @@ const UploadPersonaDialog: React.FC<UploadPersonaDialogProps> = ({ open, onOpenC
               />
               {selectedFile && (
                 <p className="text-xs text-gray-600 dark:text-gray-400">
-                  Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(2)} KB)
+                  {localize('com_endpoint_persona_file_selected', {
+                    name: selectedFile.name,
+                    size: (selectedFile.size / 1024).toFixed(2),
+                  })}
                 </p>
               )}
             </div>
             <div className="grid w-full items-center gap-2">
               <Label htmlFor="preset-title" className="text-left text-sm font-medium">
-                Preset Name (optional)
+                {localize('com_endpoint_preset_name_optional')}
               </Label>
               <Input
                 id="preset-title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Leave empty to use filename"
+                placeholder={localize('com_endpoint_preset_name_placeholder')}
                 className={cn(
                   defaultTextProps,
                   'flex h-10 max-h-10 w-full resize-none px-3 py-2',
@@ -149,7 +152,7 @@ const UploadPersonaDialog: React.FC<UploadPersonaDialogProps> = ({ open, onOpenC
         selection={{
           selectHandler: handleUpload,
           selectClasses: 'bg-green-500 hover:bg-green-600 dark:hover:bg-green-600 text-white',
-          selectText: 'Upload',
+          selectText: localize('com_ui_upload'),
           selectDisabled: !selectedFile || uploadPersonaMutation.isPending,
         }}
       />
