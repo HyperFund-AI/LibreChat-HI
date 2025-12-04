@@ -102,7 +102,7 @@ router.post('/upload-persona', async (req, res) => {
         logger.warn('[/presets/upload-persona] Error deleting temp file', unlinkError);
       }
       return res.status(400).json({
-        error: 'Invalid file type. Only .md, .txt, and .markdown files are allowed'
+        error: 'Invalid file type. Only .md, .txt, and .markdown files are allowed',
       });
     }
 

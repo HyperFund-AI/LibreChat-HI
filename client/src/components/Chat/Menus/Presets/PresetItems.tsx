@@ -15,7 +15,7 @@ import {
 import type { TPreset } from 'librechat-data-provider';
 import type { FC } from 'react';
 import FileUpload from '~/components/Chat/Input/Files/FileUpload';
-import UploadPersonaDialog from './UploadPersonaDialog';
+import UploadPersonaDialog from '~/components/Chat/Menus/Presets/UploadPersonaDialog';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { getPresetTitle, getIconKey } from '~/utils';
 import { MenuSeparator, MenuItem } from '../UI';
@@ -112,7 +112,7 @@ const PresetItems: FC<{
             type="button"
             onClick={() => setUploadPersonaOpen(true)}
             className="ml-2 flex h-[32px] cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-green-600 focus:ring-ring dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-green-500"
-            aria-label="Upload Persona File"
+            aria-label={localize('com_endpoint_upload_persona')}
           >
             <svg
               width="16"
@@ -129,7 +129,7 @@ const PresetItems: FC<{
               <polyline points="17 8 12 3 7 8" />
               <line x1="12" y1="3" x2="12" y2="15" />
             </svg>
-            Upload Persona
+            {localize('com_endpoint_upload_persona')}
           </button>
         </div>
       </div>
