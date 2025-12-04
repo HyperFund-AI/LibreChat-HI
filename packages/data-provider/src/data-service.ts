@@ -82,6 +82,13 @@ export function deletePreset(arg: s.TPreset | undefined): Promise<m.PresetDelete
   return request.post(endpoints.deletePreset(), arg);
 }
 
+export function uploadPersonaFile(
+  data: FormData,
+  requestConfig?: { signal?: AbortSignal | null },
+): Promise<s.TPreset> {
+  return request.postMultiPart(endpoints.uploadPersona(), data, requestConfig);
+}
+
 export function getSearchEnabled(): Promise<boolean> {
   return request.get(endpoints.searchEnabled());
 }

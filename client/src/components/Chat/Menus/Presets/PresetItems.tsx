@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Close } from '@radix-ui/react-popover';
 import { Flipper, Flipped } from 'react-flip-toolkit';
@@ -14,6 +15,7 @@ import {
 import type { TPreset } from 'librechat-data-provider';
 import type { FC } from 'react';
 import FileUpload from '~/components/Chat/Input/Files/FileUpload';
+import UploadPersonaDialog from './UploadPersonaDialog';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { getPresetTitle, getIconKey } from '~/utils';
 import { MenuSeparator, MenuItem } from '../UI';
@@ -39,6 +41,7 @@ const PresetItems: FC<{
   clearAllPresets,
   onFileSelected,
 }) => {
+  const [uploadPersonaOpen, setUploadPersonaOpen] = useState(false);
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const defaultPreset = useRecoilValue(store.defaultPreset);
   const localize = useLocalize();
@@ -105,8 +108,32 @@ const PresetItems: FC<{
             />
             <FileUpload onFileSelected={onFileSelected} />
           </Dialog>
+          <button
+            type="button"
+            onClick={() => setUploadPersonaOpen(true)}
+            className="ml-2 flex h-[32px] cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-green-600 focus:ring-ring dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-green-500"
+            aria-label="Upload Persona File"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="mr-1"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            Upload Persona
+          </button>
         </div>
       </div>
+      <UploadPersonaDialog open={uploadPersonaOpen} onOpenChange={setUploadPersonaOpen} />
       {presets && presets.length === 0 && (
         <div
           role="menuitem"
