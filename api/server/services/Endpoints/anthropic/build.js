@@ -77,6 +77,19 @@ const buildOptions = (endpoint, parsedBody) => {
   // Use system field if promptPrefix is not set (system takes precedence for persona files)
   const finalPromptPrefix = promptPrefix || system || '';
 
+  // Debug logging for persona files
+  if (system && !promptPrefix) {
+    logger.info(
+      `[ANTHROPIC BUILD] Using system field from preset (length: ${system.length} chars)`,
+    );
+  } else if (promptPrefix) {
+    logger.info(
+      `[ANTHROPIC BUILD] Using promptPrefix (length: ${promptPrefix.length} chars), system field: ${system ? `present (${system.length} chars)` : 'not present'}`,
+    );
+  } else {
+    logger.warn('[ANTHROPIC BUILD] No promptPrefix or system field found');
+  }
+
   // Upgrade Claude models to Opus 4.5 if needed
   // IMPORTANT: Preserve dated model names - Anthropic requires date suffixes
   let finalModelLabel = modelLabel;
