@@ -221,6 +221,20 @@ export const useDeletePresetMutation = (): UseMutationResult<
   });
 };
 
+export const useUploadPersonaMutation = (): UseMutationResult<
+  s.TPreset,
+  unknown,
+  FormData,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload: FormData) => dataService.uploadPersonaFile(payload), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.presets]);
+    },
+  });
+};
+
 export const useUpdateTokenCountMutation = (): UseMutationResult<
   t.TUpdateTokenCountResponse,
   unknown,

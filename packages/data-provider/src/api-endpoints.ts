@@ -124,6 +124,8 @@ export const presets = () => `${BASE_URL}/api/presets`;
 
 export const deletePreset = () => `${BASE_URL}/api/presets/delete`;
 
+export const uploadPersona = () => `${BASE_URL}/api/presets/upload-persona`;
+
 export const aiEndpoints = () => `${BASE_URL}/api/endpoints`;
 
 export const models = () => `${BASE_URL}/api/models`;

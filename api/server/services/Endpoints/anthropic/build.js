@@ -60,6 +60,7 @@ const buildOptions = (endpoint, parsedBody) => {
   const {
     modelLabel,
     promptPrefix,
+    system,
     maxContextTokens,
     fileTokenLimit,
     resendFiles = anthropicSettings.resendFiles.default,
@@ -72,6 +73,9 @@ const buildOptions = (endpoint, parsedBody) => {
     artifacts,
     ...modelOptions
   } = parsedBody;
+
+  // Use system field if promptPrefix is not set (system takes precedence for persona files)
+  const finalPromptPrefix = promptPrefix || system || '';
 
   // Upgrade Claude models to Opus 4.5 if needed
   // IMPORTANT: Preserve dated model names - Anthropic requires date suffixes
@@ -87,11 +91,11 @@ const buildOptions = (endpoint, parsedBody) => {
       );
       modelOptions.model = upgraded;
     } else {
-      logger.warn(
+        logger.warn(
         `[MODEL] Anthropic: Using "${modelOptions.model}" for endpoint ${endpoint}`,
       );
     }
-    
+
     // Automatically set modelLabel for Opus 4.5 if not already set
     // This helps the model correctly identify itself, similar to Claude's web interface
     if (
@@ -105,7 +109,7 @@ const buildOptions = (endpoint, parsedBody) => {
   const endpointOption = removeNullishValues({
     endpoint,
     modelLabel: finalModelLabel,
-    promptPrefix,
+    promptPrefix: finalPromptPrefix,
     resendFiles,
     promptCache,
     thinking,
