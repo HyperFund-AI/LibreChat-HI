@@ -15,7 +15,7 @@ import {
 import type { TPreset } from 'librechat-data-provider';
 import type { FC } from 'react';
 import FileUpload from '~/components/Chat/Input/Files/FileUpload';
-import UploadPersonaDialog from './UploadPersonaDialog';
+import UploadPersonaDialog from '~/components/Chat/Menus/Presets/UploadPersonaDialog';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { getPresetTitle, getIconKey } from '~/utils';
 import { MenuSeparator, MenuItem } from '../UI';
