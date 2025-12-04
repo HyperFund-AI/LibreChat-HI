@@ -14,7 +14,7 @@ describe('getLLMConfig', () => {
     const result = getLLMConfig('test-api-key', { modelOptions: {} });
 
     expect(result.llmConfig).toHaveProperty('apiKey', 'test-api-key');
-    expect(result.llmConfig).toHaveProperty('model', 'claude-opus-4-5');
+    expect(result.llmConfig).toHaveProperty('model', 'claude-opus-4-5-20251101');
     expect(result.llmConfig).toHaveProperty('stream', true);
     expect(result.llmConfig).toHaveProperty('maxTokens');
   });
@@ -718,7 +718,7 @@ describe('getLLMConfig', () => {
         const result = getLLMConfig('test-key', { modelOptions: {} });
 
         expect(result.llmConfig).toMatchObject({
-          model: 'claude-opus-4-5', // default model
+          model: 'claude-opus-4-5-20251101', // default model with date suffix
           stream: true, // default stream
           maxTokens: 64000, // DEFAULT_MAX_OUTPUT for claude-opus-4-5
         });

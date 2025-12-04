@@ -1,15 +1,19 @@
 const crypto = require('crypto');
 const express = require('express');
-const fs = require('fs').promises;
+const fs = require('fs');
+const fsp = require('fs').promises;
 const path = require('path');
 const multer = require('multer');
 const { logger } = require('@librechat/data-schemas');
 const { getPresets, savePreset, deletePresets } = require('~/models');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
-const { storage } = require('./files/multer');
+const configMiddleware = require('~/server/middleware/config/app');
+const { getAppConfig } = require('~/server/services/Config');
+const { sanitizeFilename } = require('@librechat/api');
 
 const router = express.Router();
 router.use(requireJwtAuth);
+router.use(configMiddleware);
 
 router.get('/', async (req, res) => {
   const presets = (await getPresets(req.user.id)).map((preset) => preset);
@@ -53,7 +57,28 @@ router.post('/delete', async (req, res) => {
  * Upload a persona file and create a preset from it
  * Accepts .md, .txt, or .markdown files
  */
-router.post('/upload-persona', async (req, res) => {
+router.post('/upload-persona', (req, res) => {
+  // Custom storage for persona files
+  const personaStorage = multer.diskStorage({
+    destination: function (req, file, cb) {
+      const appConfig = req.config;
+      if (!appConfig || !appConfig.paths || !appConfig.paths.uploads) {
+        return cb(new Error('Server configuration error: uploads path not configured'), false);
+      }
+      const outputPath = path.join(appConfig.paths.uploads, 'temp', req.user.id);
+      if (!fs.existsSync(outputPath)) {
+        fs.mkdirSync(outputPath, { recursive: true });
+      }
+      cb(null, outputPath);
+    },
+    filename: function (req, file, cb) {
+      req.file_id = crypto.randomUUID();
+      file.originalname = decodeURIComponent(file.originalname);
+      const sanitizedFilename = sanitizeFilename(file.originalname);
+      cb(null, sanitizedFilename);
+    },
+  });
+
   // Custom file filter for persona files
   const personaFileFilter = (req, file, cb) => {
     if (!file) {
@@ -76,7 +101,7 @@ router.post('/upload-persona', async (req, res) => {
   };
 
   const upload = multer({
-    storage,
+    storage: personaStorage,
     fileFilter: personaFileFilter,
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit for persona files
   }).single('personaFile');
@@ -88,16 +113,37 @@ router.post('/upload-persona', async (req, res) => {
     }
 
     if (!req.file) {
+      logger.warn('[/presets/upload-persona] No file in request');
       return res.status(400).json({ error: 'No file provided' });
+    }
+
+    if (!req.config) {
+      logger.error('[/presets/upload-persona] req.config not available');
+      try {
+        await fsp.unlink(req.file.path);
+      } catch (unlinkError) {
+        logger.warn('[/presets/upload-persona] Error deleting temp file', unlinkError);
+      }
+      return res.status(500).json({ error: 'Server configuration error' });
     }
 
     const file = req.file;
     const fileExt = path.extname(file.originalname).toLowerCase();
     const allowedExtensions = ['.md', '.txt', '.markdown'];
 
+    // Log file upload details for debugging
+    logger.info('[/presets/upload-persona] File uploaded', {
+      originalname: file.originalname,
+      filename: file.filename,
+      path: file.path,
+      size: file.size,
+      mimetype: file.mimetype,
+      userId: req.user.id,
+    });
+
     if (!allowedExtensions.includes(fileExt)) {
       try {
-        await fs.unlink(file.path);
+        await fsp.unlink(file.path);
       } catch (unlinkError) {
         logger.warn('[/presets/upload-persona] Error deleting temp file', unlinkError);
       }
@@ -108,10 +154,10 @@ router.post('/upload-persona', async (req, res) => {
 
     try {
       // Read the file content
-      const fileContent = await fs.readFile(file.path, 'utf-8');
+      const fileContent = await fsp.readFile(file.path, 'utf-8');
 
       // Clean up temp file
-      await fs.unlink(file.path);
+      await fsp.unlink(file.path);
 
       // Extract title from filename (remove extension)
       const baseName = path.basename(file.originalname, fileExt);
@@ -134,7 +180,7 @@ router.post('/upload-persona', async (req, res) => {
 
       // Try to clean up temp file on error
       try {
-        await fs.unlink(file.path);
+        await fsp.unlink(file.path);
       } catch (unlinkError) {
         logger.warn('[/presets/upload-persona] Error deleting temp file on error', unlinkError);
       }
