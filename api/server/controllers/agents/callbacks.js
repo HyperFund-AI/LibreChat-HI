@@ -284,6 +284,43 @@ function createToolEndCallback({ req, res, artifactPromises }) {
       return;
     }
 
+    // Handle PDF generation tool - parse JSON response and create attachment
+    if (output.name === 'generate_pdf') {
+      try {
+        // Tool output can be in output.output (string) or output.content (string)
+        const outputContent = output.output || output.content || '{}';
+        const result = typeof outputContent === 'string' ? JSON.parse(outputContent) : outputContent;
+
+        if (result.success && result.file?.file_id) {
+          const { findFileById } = require('~/models/File');
+          const file = await findFileById(result.file.file_id);
+          if (file) {
+            const fileMetadata = {
+              ...file,
+              messageId: metadata.run_id,
+              toolCallId: output.tool_call_id,
+              conversationId: metadata.thread_id,
+            };
+            artifactPromises.push(Promise.resolve(fileMetadata));
+            if (!res.headersSent) {
+              return fileMetadata;
+            }
+            res.write(`event: attachment\ndata: ${JSON.stringify(fileMetadata)}\n\n`);
+            return fileMetadata;
+          } else {
+            logger.warn(
+              `[PDFGenerator] File not found in database: ${result.file.file_id}`,
+            );
+          }
+        } else {
+          logger.warn('[PDFGenerator] Invalid result structure:', result);
+        }
+      } catch (error) {
+        logger.error('Error processing PDF generation result:', error);
+      }
+      return;
+    }
+
     if (!output.artifact) {
       return;
     }
