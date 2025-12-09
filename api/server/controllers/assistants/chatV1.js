@@ -139,7 +139,15 @@ const chatV1 = async (req, res) => {
     }
 
     if (!openai || !thread_id || !run_id) {
-      return sendResponse(req, res, messageData, defaultErrorMessage);
+      // Ensure we always send a proper error message
+      const errorText = error?.message || defaultErrorMessage;
+      logger.error('[/assistants/chat/] Early error (before run initialization):', {
+        error: errorText,
+        hasOpenai: !!openai,
+        hasThreadId: !!thread_id,
+        hasRunId: !!run_id,
+      });
+      return sendResponse(req, res, messageData, errorText);
     }
 
     await sleep(2000);
@@ -241,12 +249,16 @@ const chatV1 = async (req, res) => {
 
     if (convoId && !_thread_id) {
       completedRun = true;
-      throw new Error('Missing thread_id for existing conversation');
+      const error = new Error('Missing thread_id for existing conversation');
+      logger.error('[/assistants/chat/]', error);
+      return await handleError(error);
     }
 
     if (!assistant_id) {
       completedRun = true;
-      throw new Error('Missing assistant_id');
+      const error = new Error('Missing assistant_id');
+      logger.error('[/assistants/chat/]', error);
+      return await handleError(error);
     }
 
     const checkBalanceBeforeRun = async () => {
@@ -651,7 +663,16 @@ const chatV1 = async (req, res) => {
       });
     }
   } catch (error) {
-    await handleError(error);
+    // Ensure error has a message
+    if (!error || !error.message) {
+      logger.error('[/assistants/chat/] Caught error without message:', error);
+      const errorWithMessage = new Error(
+        error?.toString() || 'An unexpected error occurred while processing your request.',
+      );
+      await handleError(errorWithMessage);
+    } else {
+      await handleError(error);
+    }
   }
 };
 
