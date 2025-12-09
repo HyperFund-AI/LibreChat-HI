@@ -152,37 +152,20 @@ class PDFGenerator extends Tool {
               context: FileContext.pdf_generation,
             });
 
-            // Save PDF using the appropriate storage strategy
-            const { saveBuffer } = getStrategyFunctions(source);
+            // Save PDF directly to uploads directory (bypassing saveBuffer to avoid path issues)
             const formattedDate = new Date().toISOString();
+            const userUploadDir = path.join(appConfig.paths.uploads, this.userId.toString());
 
-            let filepath;
-            let bytes = fileSize;
-
-            if (saveBuffer) {
-              // Use storage strategy to save the buffer
-              // saveBuffer typically returns a filepath string for local storage
-              try {
-                const savedPath = await saveBuffer({
-                  userId: this.userId,
-                  buffer: pdfBuffer,
-                  fileName: pdfFilename,
-                  basePath: 'uploads',
-                });
-                filepath =
-                  savedPath ||
-                  path.posix.join('/', 'uploads', this.userId.toString(), pdfFilename);
-              } catch (saveError) {
-                logger.error('[PDFGenerator] Error saving buffer:', saveError);
-                // Fallback to temp file path
-                const relativePath = path.relative(appConfig.paths.uploads, tempFilePath);
-                filepath = `/api/files/${relativePath}`;
-              }
-            } else {
-              // Fallback to local file path
-              const relativePath = path.relative(appConfig.paths.uploads, tempFilePath);
-              filepath = `/api/files/${relativePath}`;
+            if (!fs.existsSync(userUploadDir)) {
+              fs.mkdirSync(userUploadDir, { recursive: true });
             }
+
+            const finalPath = path.join(userUploadDir, pdfFilename);
+            fs.writeFileSync(finalPath, pdfBuffer);
+
+            // Filepath should be relative to uploads root: /uploads/userId/filename.pdf
+            const filepath = path.posix.join('/', 'uploads', this.userId.toString(), pdfFilename);
+            const bytes = fileSize;
 
             // Create file record in database
             const file = {
