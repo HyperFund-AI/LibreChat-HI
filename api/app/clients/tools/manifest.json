@@ -179,5 +179,12 @@
         "description": "Provide your Flux API key from your user profile."
       }
     ]
+  },
+  {
+    "name": "PDF Generator",
+    "pluginKey": "generate_pdf",
+    "description": "Generate PDF documents from text content, conversation data, or structured information.",
+    "icon": "assets/pdf-generator.png",
+    "authConfig": []
   }
 ]
