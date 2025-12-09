@@ -396,3 +396,5 @@ export const teamByConversation = (conversationId: string) =>
   `${teams()}/${encodeURIComponent(conversationId)}`;
 export const teamParse = (conversationId: string) =>
   `${teams()}/${encodeURIComponent(conversationId)}/parse`;
+export const teamChat = (conversationId: string) =>
+  `${teams()}/${encodeURIComponent(conversationId)}/chat`;

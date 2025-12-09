@@ -1,6 +1,6 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
-const { requireJwtAuth } = require('~/server/middleware');
+const { requireJwtAuth, setHeaders } = require('~/server/middleware');
 const {
   getDrSterlingAgent,
   parseTeamFromMarkdown,
@@ -8,6 +8,7 @@ const {
   DR_STERLING_AGENT_ID,
 } = require('~/server/services/Teams');
 const { saveTeamAgents, getTeamAgents, clearTeamAgents } = require('~/models/Conversation');
+const { teamChatController } = require('~/server/controllers/teams');
 
 const router = express.Router();
 
@@ -120,6 +121,23 @@ router.delete('/:conversationId', async (req, res) => {
   } catch (error) {
     logger.error('[DELETE /api/teams/:conversationId] Error:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/teams/:conversationId/chat
+ * Send a message to the team and get collaborative response
+ */
+router.post('/:conversationId/chat', setHeaders, async (req, res) => {
+  try {
+    // Add conversationId from params to body for the controller
+    req.body.conversationId = req.params.conversationId;
+    await teamChatController(req, res);
+  } catch (error) {
+    logger.error('[POST /api/teams/:conversationId/chat] Error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: error.message });
+    }
   }
 });
 

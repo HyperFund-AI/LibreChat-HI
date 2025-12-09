@@ -9,6 +9,12 @@ const {
   convertParsedTeamToAgents,
   DR_STERLING_AGENT_ID,
 } = require('./drSterlingAgent');
+const {
+  executeTeamAgent,
+  orchestrateTeamResponse,
+  formatAsMarkdownDocument,
+  shouldUseTeamOrchestration,
+} = require('./orchestrator');
 
 module.exports = {
   // Automatic team creation (simple mode)
@@ -26,6 +32,12 @@ module.exports = {
   parseTeamFromMarkdown,
   convertParsedTeamToAgents,
   DR_STERLING_AGENT_ID,
+  
+  // Team Orchestration
+  executeTeamAgent,
+  orchestrateTeamResponse,
+  formatAsMarkdownDocument,
+  shouldUseTeamOrchestration,
   
   // Prompts
   FILE_ANALYSIS_PROMPT,

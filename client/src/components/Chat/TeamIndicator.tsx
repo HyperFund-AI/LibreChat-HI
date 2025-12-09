@@ -163,19 +163,9 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
   // Mutation to create team from markdown
   const createTeamMutation = useMutation({
     mutationFn: async (markdownContent: string) => {
-      console.log('[TeamIndicator] mutationFn called with markdown length:', markdownContent.length);
-      console.log('[TeamIndicator] Calling API: /api/teams/' + conversationId + '/parse');
-      try {
-        const result = await dataService.parseTeamFromMarkdown(conversationId!, markdownContent);
-        console.log('[TeamIndicator] API result:', result);
-        return result;
-      } catch (error) {
-        console.error('[TeamIndicator] API error:', error);
-        throw error;
-      }
+      return dataService.parseTeamFromMarkdown(conversationId!, markdownContent);
     },
     onSuccess: (data) => {
-      console.log('[TeamIndicator] onSuccess:', data);
       if (data.success) {
         setShowSuccess(true);
         // Invalidate conversation query to refresh team agents
@@ -184,30 +174,15 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
         setTimeout(() => setShowSuccess(false), 5000);
       }
     },
-    onError: (error) => {
-      console.error('[TeamIndicator] onError:', error);
-    },
     onSettled: () => {
-      console.log('[TeamIndicator] onSettled');
       setIsCreating(false);
     },
   });
 
   const handleCreateTeam = () => {
-    console.log('[TeamIndicator] handleCreateTeam called');
-    console.log('[TeamIndicator] conversationId:', conversationId);
-    console.log('[TeamIndicator] teamSpecMessage:', teamSpecMessage ? 'exists' : 'null');
-    console.log('[TeamIndicator] teamSpecMessage text length:', teamSpecMessage?.text?.length || 0);
-    
     if (teamSpecMessage && conversationId) {
-      console.log('[TeamIndicator] Starting team creation...');
       setIsCreating(true);
       createTeamMutation.mutate(teamSpecMessage.text);
-    } else {
-      console.error('[TeamIndicator] Cannot create team - missing data:', {
-        hasTeamSpecMessage: !!teamSpecMessage,
-        hasConversationId: !!conversationId,
-      });
     }
   };
 
@@ -241,7 +216,6 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
       <button
         type="button"
         onClick={(e) => {
-          console.log('[TeamIndicator] Button clicked!');
           e.preventDefault();
           e.stopPropagation();
           handleCreateTeam();
@@ -277,14 +251,15 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
 
   return (
     <>
-      {/* Trigger Button */}
+      {/* Trigger Button - Team is ACTIVE and will respond to messages */}
       <button
         onClick={() => setIsModalOpen(true)}
         className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
           showSuccess
             ? 'animate-pulse bg-green-500/20 text-green-600 dark:text-green-400'
-            : 'bg-blue-500/20 text-blue-600 hover:bg-blue-500/30 dark:text-blue-400'
+            : 'bg-gradient-to-r from-emerald-500/20 to-blue-500/20 text-emerald-600 hover:from-emerald-500/30 hover:to-blue-500/30 dark:text-emerald-400'
         }`}
+        title="Team Mode Active - Your messages will be answered by the team"
       >
         {showSuccess ? (
           <>
@@ -294,7 +269,10 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
         ) : (
           <>
             <Users className="h-3.5 w-3.5" />
-            <span>{teamAgents.length} Team Members</span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+              {teamAgents.length} Active
+            </span>
           </>
         )}
       </button>

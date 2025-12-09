@@ -8,7 +8,8 @@ const {
 } = require('~/server/middleware');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const { saveMessage } = require('~/models');
-const { DR_STERLING_AGENT_ID } = require('~/server/services/Teams');
+const { DR_STERLING_AGENT_ID, orchestrateTeamResponse } = require('~/server/services/Teams');
+const { getTeamAgents } = require('~/models/Conversation');
 
 function createCloseHandler(abortController) {
   return function (manual) {
@@ -26,6 +27,175 @@ function createCloseHandler(abortController) {
     abortController.abort();
     logger.debug('[AgentController] Request aborted on close');
   };
+}
+
+/**
+ * Handles team orchestration when a conversation has team agents
+ * @param {Request} req - Express request
+ * @param {Response} res - Express response
+ * @param {Object} params - Parameters including text, conversationId, teamAgents
+ */
+async function handleTeamOrchestration(req, res, { text, conversationId, parentMessageId, teamAgents, userId }) {
+  const { v4: uuidv4 } = require('uuid');
+  const { getMessages, saveConvo, getConvo } = require('~/models');
+  
+  try {
+    logger.info(`[handleTeamOrchestration] Starting with ${teamAgents.length} team agents`);
+    
+    // Generate IDs
+    const userMessageId = uuidv4();
+    const responseMessageId = uuidv4();
+    
+    // Get conversation history
+    const conversationHistory = await getMessages({ conversationId }, '-createdAt') || [];
+    
+    // Get file context if available
+    let fileContext = '';
+    const conversation = await getConvo(userId, conversationId);
+    
+    // Create user message
+    const userMessage = {
+      messageId: userMessageId,
+      conversationId: conversationId,
+      parentMessageId: parentMessageId || Constants.NO_PARENT,
+      isCreatedByUser: true,
+      user: userId,
+      text: text,
+      sender: 'User',
+      endpoint: 'agents',
+    };
+
+    // Save user message
+    await saveMessage(req, userMessage, { context: 'handleTeamOrchestration - user message' });
+
+    // Send sync event to establish the conversation
+    sendEvent(res, {
+      sync: true,
+      conversationId,
+      thread_id: conversationId,
+      responseMessage: {
+        messageId: responseMessageId,
+        conversationId: conversationId,
+        parentMessageId: userMessageId,
+        isCreatedByUser: false,
+        text: '',
+        sender: 'Team',
+      },
+      requestMessage: userMessage,
+    });
+
+    // Track accumulated response for streaming
+    let accumulatedText = '';
+    let agentIndex = 0;
+
+    // Orchestrate team response
+    const orchestrationResult = await orchestrateTeamResponse({
+      userMessage: text,
+      teamAgents,
+      conversationHistory,
+      fileContext,
+      config: req.config,
+      onAgentStart: (agent) => {
+        agentIndex++;
+        const header = `\n\n## 🤖 ${agent.name}\n_${agent.role}_\n\n`;
+        accumulatedText += header;
+        
+        // Stream the header
+        sendEvent(res, {
+          type: 'text',
+          text: header,
+          index: 0,
+          messageId: responseMessageId,
+          conversationId: conversationId,
+        });
+      },
+      onAgentComplete: (agentResponse) => {
+        const content = `${agentResponse.response}\n\n---\n`;
+        accumulatedText += content;
+        
+        // Stream the agent's response
+        sendEvent(res, {
+          type: 'text',
+          text: content,
+          index: 0,
+          messageId: responseMessageId,
+          conversationId: conversationId,
+        });
+      },
+    });
+
+    // Use the formatted markdown response
+    const finalText = orchestrationResult.success 
+      ? orchestrationResult.formattedResponse 
+      : `Error: ${orchestrationResult.error || 'Team orchestration failed'}`;
+
+    // Create response message
+    const responseMessage = {
+      messageId: responseMessageId,
+      conversationId: conversationId,
+      parentMessageId: userMessageId,
+      isCreatedByUser: false,
+      user: userId,
+      text: finalText,
+      sender: 'Team',
+      model: 'team-collaboration',
+      endpoint: 'agents',
+      unfinished: false,
+      error: !orchestrationResult.success,
+    };
+
+    // Save response message
+    await saveMessage(req, responseMessage, { context: 'handleTeamOrchestration - team response' });
+
+    // Update conversation
+    const convoUpdate = {
+      conversationId: conversationId,
+      user: userId,
+      endpoint: 'agents',
+      model: 'team-collaboration',
+      title: conversation?.title || 'Team Conversation',
+    };
+
+    await saveConvo(req, convoUpdate, { context: 'handleTeamOrchestration - save convo' });
+
+    // Send final event
+    sendEvent(res, {
+      final: true,
+      conversation: convoUpdate,
+      title: convoUpdate.title,
+      requestMessage: userMessage,
+      responseMessage: responseMessage,
+    });
+
+    res.end();
+    logger.info(`[handleTeamOrchestration] Completed - ${teamAgents.length} agents responded`);
+  } catch (error) {
+    logger.error('[handleTeamOrchestration] Error:', error);
+    
+    const errorResponse = {
+      messageId: uuidv4(),
+      conversationId: conversationId,
+      parentMessageId: parentMessageId || Constants.NO_PARENT,
+      isCreatedByUser: false,
+      text: `Team collaboration error: ${error.message}`,
+      sender: 'Team',
+      error: true,
+    };
+    
+    sendEvent(res, {
+      final: true,
+      conversation: { conversationId },
+      requestMessage: {
+        messageId: uuidv4(),
+        conversationId,
+        parentMessageId: parentMessageId || Constants.NO_PARENT,
+        isCreatedByUser: true,
+        text,
+      },
+      responseMessage: errorResponse,
+    });
+    res.end();
+  }
 }
 
 const AgentController = async (req, res, next, initializeClient, addTitle) => {
@@ -61,6 +231,29 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
   
   if (drSterlingActivated) {
     logger.info(`[AgentController] 🎩 Dr. Sterling mode active for user: ${userName}`);
+  }
+
+  // Check if this conversation has team agents and should use team orchestration
+  // Skip team mode if Dr. Sterling was explicitly activated
+  if (!drSterlingActivated && conversationId && conversationId !== Constants.NEW_CONVO) {
+    try {
+      const teamAgents = await getTeamAgents(conversationId);
+      if (teamAgents && teamAgents.length > 0) {
+        logger.info(`[AgentController] 🤝 Team mode detected with ${teamAgents.length} agents, routing to team orchestration`);
+        
+        // Route to team orchestration
+        return await handleTeamOrchestration(req, res, {
+          text,
+          conversationId,
+          parentMessageId,
+          teamAgents,
+          userId,
+        });
+      }
+    } catch (teamCheckError) {
+      logger.error('[AgentController] Error checking for team agents:', teamCheckError);
+      // Continue with normal flow on error
+    }
   }
 
   // Create handler to avoid capturing the entire parent scope
