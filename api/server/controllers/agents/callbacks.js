@@ -295,12 +295,17 @@ function createToolEndCallback({ req, res, artifactPromises }) {
           const { findFileById } = require('~/models/File');
           const file = await findFileById(result.file.file_id);
           if (file) {
+            // Ensure file_id is included for frontend download
             const fileMetadata = {
               ...file,
+              file_id: file.file_id, // Explicitly include file_id
               messageId: metadata.run_id,
               toolCallId: output.tool_call_id,
               conversationId: metadata.thread_id,
             };
+            logger.debug(
+              `[PDFGenerator] Created attachment metadata: file_id=${file.file_id}, filepath=${file.filepath}`,
+            );
             artifactPromises.push(Promise.resolve(fileMetadata));
             if (!res.headersSent) {
               return fileMetadata;
