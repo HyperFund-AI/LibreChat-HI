@@ -56,4 +56,14 @@ export interface IConversation extends Document {
   expiredAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
+  teamAgents?: Array<{
+    agentId: string;
+    role: string;
+    instructions: string;
+    name: string;
+    provider: string;
+    model: string;
+  }>;
+  hostAgentId?: string;
+  teamFileId?: string;
 }

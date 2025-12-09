@@ -40,6 +40,25 @@ const convoSchema: Schema<IConversation> = new Schema(
     expiredAt: {
       type: Date,
     },
+    teamAgents: {
+      type: [
+        {
+          agentId: String,
+          role: String,
+          instructions: String,
+          name: String,
+          provider: String,
+          model: String,
+        },
+      ],
+      default: [],
+    },
+    hostAgentId: {
+      type: String,
+    },
+    teamFileId: {
+      type: String,
+    },
   },
   { timestamps: true },
 );

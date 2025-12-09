@@ -75,10 +75,89 @@ const getConvoFiles = async (conversationId) => {
   }
 };
 
+/**
+ * Saves team agents to a conversation
+ * @param {string} conversationId - The conversation ID
+ * @param {Array} teamAgents - Array of team agent configurations
+ * @param {string} hostAgentId - The coordinator agent ID
+ * @param {string} teamFileId - The file ID that triggered team creation
+ * @returns {Promise<Object>} Updated conversation
+ */
+const saveTeamAgents = async (conversationId, teamAgents, hostAgentId, teamFileId) => {
+  try {
+    const update = {
+      teamAgents,
+      hostAgentId,
+      teamFileId,
+    };
+
+    const conversation = await Conversation.findOneAndUpdate(
+      { conversationId },
+      { $set: update },
+      { new: true },
+    ).lean();
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    logger.debug(`[saveTeamAgents] Saved ${teamAgents.length} team agents to conversation ${conversationId}`);
+    return conversation;
+  } catch (error) {
+    logger.error('[saveTeamAgents] Error saving team agents:', error);
+    throw error;
+  }
+};
+
+/**
+ * Retrieves team agents from a conversation
+ * @param {string} conversationId - The conversation ID
+ * @returns {Promise<Array|null>} Array of team agents or null if not found
+ */
+const getTeamAgents = async (conversationId) => {
+  try {
+    const conversation = await Conversation.findOne({ conversationId }, 'teamAgents').lean();
+    return conversation?.teamAgents ?? null;
+  } catch (error) {
+    logger.error('[getTeamAgents] Error getting team agents:', error);
+    return null;
+  }
+};
+
+/**
+ * Clears team agents from a conversation
+ * @param {string} conversationId - The conversation ID
+ * @returns {Promise<Object>} Updated conversation
+ */
+const clearTeamAgents = async (conversationId) => {
+  try {
+    const conversation = await Conversation.findOneAndUpdate(
+      { conversationId },
+      {
+        $unset: {
+          teamAgents: '',
+          hostAgentId: '',
+          teamFileId: '',
+        },
+      },
+      { new: true },
+    ).lean();
+
+    logger.debug(`[clearTeamAgents] Cleared team agents from conversation ${conversationId}`);
+    return conversation;
+  } catch (error) {
+    logger.error('[clearTeamAgents] Error clearing team agents:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   getConvoFiles,
   searchConversation,
   deleteNullOrEmptyConversations,
+  saveTeamAgents,
+  getTeamAgents,
+  clearTeamAgents,
   /**
    * Saves a conversation to the database.
    * @param {Object} req - The request object.

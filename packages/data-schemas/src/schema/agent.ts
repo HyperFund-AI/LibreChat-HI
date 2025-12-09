@@ -112,6 +112,11 @@ const agentSchema = new Schema<IAgent>(
       default: false,
       index: true,
     },
+    isTeamCoordinator: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   {
     timestamps: true,

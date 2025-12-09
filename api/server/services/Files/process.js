@@ -733,6 +733,75 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
   const result = await createFile(fileInfo, true);
 
+  // Check if we should trigger team creation for this file
+  // Only for message attachments (not agent resources)
+  if (messageAttachment && !tool_resource) {
+    // Try to get conversationId from multiple sources
+    let conversationId = req.body?.conversationId || metadata?.conversationId;
+    
+    // If not in request, find conversation that contains this file
+    if (!conversationId && result?.file_id) {
+      try {
+        const { Conversation } = require('~/db/models');
+        const conversation = await Conversation.findOne(
+          { files: result.file_id },
+          { conversationId: 1 }
+        ).lean();
+        if (conversation) {
+          conversationId = conversation.conversationId;
+          logger.debug(`[processAgentFileUpload] Found conversation ${conversationId} for file ${result.file_id}`);
+        }
+      } catch (error) {
+        logger.debug('[processAgentFileUpload] Could not find conversation by file_id:', error.message);
+      }
+    }
+    
+    if (conversationId) {
+      try {
+        // Check if file is a PDF or document type that should trigger team creation
+        const isDocumentFile =
+          file.mimetype === 'application/pdf' ||
+          file.mimetype?.startsWith('application/') ||
+          file.mimetype?.startsWith('text/');
+
+        if (isDocumentFile) {
+          // Trigger team creation asynchronously (don't block file upload response)
+          const { analyzeFile, createTeamAgents } = require('~/server/services/Teams');
+          const { saveTeamAgents } = require('~/models/Conversation');
+          const { COORDINATOR_AGENT_ID } = require('~/server/services/Teams');
+
+          // Run team creation in background
+          setImmediate(async () => {
+            try {
+              logger.debug(
+                `[processAgentFileUpload] Triggering team creation for conversation ${conversationId}`,
+              );
+              // Ensure coordinator agent exists
+              const { createCoordinatorAgent } = require('~/server/services/Teams');
+              await createCoordinatorAgent(req.user.id);
+              
+              const analysis = await analyzeFile({ req, file, file_id });
+              const teamAgents = await createTeamAgents({
+                conversationId,
+                roles: analysis.roles,
+              });
+              await saveTeamAgents(conversationId, teamAgents, COORDINATOR_AGENT_ID, file_id);
+              logger.info(
+                `[processAgentFileUpload] Successfully created ${teamAgents.length} team agents for conversation ${conversationId}`,
+              );
+            } catch (teamError) {
+              logger.error('[processAgentFileUpload] Error creating team agents:', teamError);
+              // Don't fail the file upload if team creation fails
+            }
+          });
+        }
+      } catch (error) {
+        logger.error('[processAgentFileUpload] Error checking for team creation:', error);
+        // Don't fail the file upload if team check fails
+      }
+    }
+  }
+
   res.status(200).json({ message: 'Agent file uploaded and processed successfully', ...result });
 };
 

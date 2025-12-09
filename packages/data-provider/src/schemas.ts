@@ -779,6 +779,21 @@ export const tConversationSchema = z.object({
   agentOptions: tAgentOptionsSchema.nullable().optional(),
   /** @deprecated Prefer `modelLabel` over `chatGptLabel` */
   chatGptLabel: z.string().nullable().optional(),
+  /* team agents */
+  teamAgents: z
+    .array(
+      z.object({
+        agentId: z.string(),
+        role: z.string(),
+        instructions: z.string(),
+        name: z.string(),
+        provider: z.string(),
+        model: z.string(),
+      }),
+    )
+    .optional(),
+  hostAgentId: z.string().optional(),
+  teamFileId: z.string().optional(),
 });
 
 export const tPresetSchema = tConversationSchema

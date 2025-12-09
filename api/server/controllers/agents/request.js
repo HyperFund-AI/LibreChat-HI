@@ -236,6 +236,103 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       delete userMessage.image_urls;
     }
 
+    // Get the final conversationId from conversation data (important for first message when conversationId was null)
+    const finalConversationId = conversation.conversationId || conversationId;
+    
+    // Trigger team creation for PDF/document files if not already created
+    // Use finalConversationId which is set even on first message
+    logger.info(`[AgentController] Checking team creation - finalConversationId: ${finalConversationId}, files: ${req.body.files ? req.body.files.length : 0}`);
+    
+    if (finalConversationId && req.body.files && req.body.files.length > 0) {
+      // Run team creation in background after response
+      const teamCreationUserId = userId;
+      const teamCreationFiles = [...req.body.files];
+      const teamCreationReq = { user: req.user, config: req.config };
+      
+      setImmediate(async () => {
+        try {
+          const { getTeamAgents } = require('~/models/Conversation');
+          const existingTeamAgents = await getTeamAgents(finalConversationId);
+          
+          logger.info(`[AgentController] Existing team agents: ${existingTeamAgents ? existingTeamAgents.length : 0}`);
+          
+          // Only create team if it doesn't exist yet
+          if (!existingTeamAgents || existingTeamAgents.length === 0) {
+            const documentFiles = teamCreationFiles.filter(
+              (file) =>
+                file.type === 'application/pdf' ||
+                file.type?.startsWith('application/') ||
+                file.type?.startsWith('text/')
+            );
+
+            logger.info(`[AgentController] Document files found: ${documentFiles.length}, types: ${teamCreationFiles.map(f => f.type).join(', ')}`);
+
+            if (documentFiles.length > 0) {
+              logger.info(
+                `[AgentController] Triggering team creation for conversation ${finalConversationId} with ${documentFiles.length} document file(s)`,
+              );
+              
+              const { analyzeFile, createTeamAgents, COORDINATOR_AGENT_ID } = require('~/server/services/Teams');
+              const { saveTeamAgents } = require('~/models/Conversation');
+              const { getFiles } = require('~/models/File');
+              
+              // Get file objects from database
+              const fileIds = documentFiles.map((f) => f.file_id);
+              logger.info(`[AgentController] Looking for files with IDs: ${fileIds.join(', ')}`);
+              const dbFiles = await getFiles({ file_id: { $in: fileIds } }, null, {});
+              logger.info(`[AgentController] Found ${dbFiles.length} files in database`);
+              
+              // Process first document file
+              if (dbFiles.length > 0) {
+                const firstFile = dbFiles[0];
+                logger.info(`[AgentController] Processing file: ${firstFile.filename}, path: ${firstFile.filepath}`);
+                
+                const { createCoordinatorAgent } = require('~/server/services/Teams');
+                await createCoordinatorAgent(teamCreationUserId);
+                
+                // Get file from filesystem for analysis
+                const fs = require('fs');
+                const path = require('path');
+                const filePath = path.join(process.cwd(), firstFile.filepath);
+                
+                logger.info(`[AgentController] Full file path: ${filePath}, exists: ${fs.existsSync(filePath)}`);
+                
+                if (fs.existsSync(filePath)) {
+                  const file = {
+                    path: filePath,
+                    originalname: firstFile.filename,
+                    mimetype: firstFile.type,
+                  };
+                  
+                  logger.info(`[AgentController] Starting file analysis...`);
+                  const analysis = await analyzeFile({ req: teamCreationReq, file, file_id: firstFile.file_id });
+                  logger.info(`[AgentController] Analysis complete. Roles: ${analysis.roles?.length || 0}`);
+                  
+                  const teamAgents = await createTeamAgents({
+                    conversationId: finalConversationId,
+                    roles: analysis.roles,
+                  });
+                  await saveTeamAgents(finalConversationId, teamAgents, COORDINATOR_AGENT_ID, firstFile.file_id);
+                  logger.info(
+                    `[AgentController] ✅ Successfully created ${teamAgents.length} team agents for conversation ${finalConversationId}`,
+                  );
+                } else {
+                  logger.error(`[AgentController] File not found at path: ${filePath}`);
+                }
+              } else {
+                logger.warn(`[AgentController] No files found in database for IDs: ${fileIds.join(', ')}`);
+              }
+            }
+          } else {
+            logger.info(`[AgentController] Team already exists with ${existingTeamAgents.length} agents`);
+          }
+        } catch (teamError) {
+          logger.error('[AgentController] Error creating team agents:', teamError);
+          // Don't fail the request if team creation fails
+        }
+      });
+    }
+
     // Only send if not aborted
     if (!abortController.signal.aborted) {
       // Create a new response object with minimal copies
