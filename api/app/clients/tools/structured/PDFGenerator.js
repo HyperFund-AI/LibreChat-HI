@@ -25,15 +25,21 @@ class PDFGenerator extends Tool {
   schema = z.object({
     content: z
       .string()
-      .describe('The main content to include in the PDF. Can be plain text, markdown-like content, or structured data.'),
+      .describe(
+        'The main content to include in the PDF. Can be plain text, markdown-like content, or structured data.',
+      ),
     title: z
       .string()
       .optional()
-      .describe('Optional title for the PDF document. If not provided, a default title will be used.'),
+      .describe(
+        'Optional title for the PDF document. If not provided, a default title will be used.',
+      ),
     filename: z
       .string()
       .optional()
-      .describe('Optional custom filename for the PDF (without .pdf extension). If not provided, a generated name will be used.'),
+      .describe(
+        'Optional custom filename for the PDF (without .pdf extension). If not provided, a generated name will be used.',
+      ),
     includeMetadata: z
       .boolean()
       .optional()
@@ -44,6 +50,8 @@ class PDFGenerator extends Tool {
   constructor(fields = {}) {
     super();
     this.override = fields.override ?? false;
+    // During tool loading/formatting, req may not be available
+    // It will be set when the tool is actually invoked
     this.req = fields.req;
     this.userId = fields.userId || fields.req?.user?.id;
     // Extract conversationId and messageId from req.body if available
@@ -76,7 +84,7 @@ class PDFGenerator extends Tool {
         const file_id = uuidv4();
         const pdfFilename = filename ? `${filename}.pdf` : `${file_id}.pdf`;
         const tempDir = path.join(appConfig.paths.uploads, 'temp', this.userId);
-        
+
         // Ensure temp directory exists
         if (!fs.existsSync(tempDir)) {
           fs.mkdirSync(tempDir, { recursive: true });
@@ -107,7 +115,7 @@ class PDFGenerator extends Tool {
         // Process and add content
         const cleanContent = this.stripMarkdown(content);
         doc.fontSize(12).font('Helvetica');
-        
+
         // Split content into paragraphs and add them
         const paragraphs = cleanContent.split(/\n\n+/);
         paragraphs.forEach((paragraph, index) => {
@@ -161,7 +169,9 @@ class PDFGenerator extends Tool {
                   fileName: pdfFilename,
                   basePath: 'uploads',
                 });
-                filepath = savedPath || path.posix.join('/', 'uploads', this.userId.toString(), pdfFilename);
+                filepath =
+                  savedPath ||
+                  path.posix.join('/', 'uploads', this.userId.toString(), pdfFilename);
               } catch (saveError) {
                 logger.error('[PDFGenerator] Error saving buffer:', saveError);
                 // Fallback to temp file path
@@ -235,6 +245,14 @@ class PDFGenerator extends Tool {
         });
       }
 
+      // Ensure req is available (should be set when tool is instantiated for actual use)
+      if (!this.req) {
+        return JSON.stringify({
+          success: false,
+          error: 'PDF generation tool is not properly initialized. Please try again.',
+        });
+      }
+
       const result = await this.generatePDF({
         content,
         title: title || 'Generated Document',
@@ -264,4 +282,3 @@ class PDFGenerator extends Tool {
 }
 
 module.exports = PDFGenerator;
-
