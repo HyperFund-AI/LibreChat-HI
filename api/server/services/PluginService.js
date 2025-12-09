@@ -103,12 +103,33 @@ const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
       return error;
     }
 
+    // Validate CREDS_KEY format and length
+    // Check if it's a valid hex string
+    if (!/^[0-9a-fA-F]+$/.test(credsKey)) {
+      const error = new Error(
+        'CREDS_KEY contains invalid characters. It must be a valid hex string (only 0-9, a-f, A-F). ' +
+          'Generate one with: openssl rand -hex 32',
+      );
+      logger.error('[updateUserPluginAuth]', error);
+      return error;
+    }
+
     // Validate CREDS_KEY length (should be 64 hex characters = 32 bytes)
-    const keyBuffer = Buffer.from(credsKey, 'hex');
-    if (keyBuffer.length !== 32) {
+    if (credsKey.length !== 64) {
       const error = new Error(
         `CREDS_KEY has invalid length: expected 64 hex characters (32 bytes), got ${credsKey.length} characters. ` +
           'Please generate a new key with: openssl rand -hex 32',
+      );
+      logger.error('[updateUserPluginAuth]', error);
+      return error;
+    }
+
+    // Verify the hex string decodes to exactly 32 bytes
+    const keyBuffer = Buffer.from(credsKey, 'hex');
+    if (keyBuffer.length !== 32) {
+      const error = new Error(
+        `CREDS_KEY decodes to ${keyBuffer.length} bytes instead of 32 bytes. ` +
+          'This may indicate invalid hex encoding. Please generate a new key with: openssl rand -hex 32',
       );
       logger.error('[updateUserPluginAuth]', error);
       return error;

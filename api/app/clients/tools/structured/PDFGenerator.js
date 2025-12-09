@@ -61,8 +61,10 @@ class PDFGenerator extends Tool {
           .string()
           .describe(
             'Image URL (http:// or https://) or base64-encoded image data (data:image/...;base64,... format). ' +
-            'You can obtain image URLs by: 1) Using web_search tools to find images online, ' +
-            '2) Using image generation tools (DALL-E, Flux, etc.) which return image URLs, ' +
+            'IMPORTANT: When using image generation tools (DALL-E, Flux, etc.) in agent mode, they return base64 data URIs. ' +
+            'ALWAYS prefer using base64 data URIs (data:image/...;base64,...) over URLs when available, as URLs may require authentication or expire. ' +
+            'You can obtain images by: 1) Using image generation tools which return base64 data URIs (preferred), ' +
+            '2) Using web_search tools to find publicly accessible image URLs, ' +
             '3) Using any publicly accessible image URL from the internet. ' +
             'Can include multiple images.',
           ),
@@ -71,7 +73,8 @@ class PDFGenerator extends Tool {
       .describe(
         'Optional array of image URLs or base64-encoded images to include in the PDF. ' +
         'Images will be embedded in the document. ' +
-        'If the user requests images, use web_search or image generation tools first to obtain image URLs, then pass them here.',
+        'IMPORTANT: Prefer base64 data URIs (data:image/...;base64,...) from image generation tools over URLs, ' +
+        'as URLs from services like OpenAI may require authentication or expire quickly.',
       ),
   });
 
@@ -120,13 +123,53 @@ class PDFGenerator extends Tool {
           throw new Error('Invalid base64 data URI format');
         }
       } else if (imageSource.startsWith('http://') || imageSource.startsWith('https://')) {
-        // Handle URLs
-        const response = await axios({
+        // Handle URLs - check if it's an OpenAI/DALL-E URL that might need authentication
+        const isOpenAIUrl =
+          imageSource.includes('oaidalleapi') ||
+          imageSource.includes('openai.com') ||
+          imageSource.includes('azure.com');
+
+        const requestConfig = {
           url: imageSource,
           responseType: 'arraybuffer',
           timeout: 30000,
-        });
-        imageBuffer = Buffer.from(response.data, 'binary');
+        };
+
+        // Add authentication headers for OpenAI URLs if API key is available
+        if (isOpenAIUrl) {
+          const openAIApiKey =
+            process.env.DALLE3_API_KEY ||
+            process.env.DALLE_API_KEY ||
+            process.env.OPENAI_API_KEY;
+          if (openAIApiKey) {
+            requestConfig.headers = {
+              Authorization: `Bearer ${openAIApiKey}`,
+            };
+          }
+        }
+
+        try {
+          const response = await axios(requestConfig);
+          imageBuffer = Buffer.from(response.data, 'binary');
+        } catch (axiosError) {
+          // Handle 403 Forbidden errors specifically
+          if (axiosError.response && axiosError.response.status === 403) {
+            if (isOpenAIUrl) {
+              throw new Error(
+                'OpenAI image URL requires authentication or has expired. ' +
+                  'The image may need to be accessed as a base64 data URI instead of a URL. ' +
+                  'Please ensure the image generation tool returns a base64 data URI.',
+              );
+            } else {
+              throw new Error(
+                `Image URL returned 403 Forbidden. The image may require authentication or may have expired. ` +
+                  `URL: ${imageSource.substring(0, 100)}...`,
+              );
+            }
+          }
+          // Re-throw other errors
+          throw axiosError;
+        }
       } else if (typeof imageSource === 'string' && imageSource.length > 100) {
         // If it's already a base64 string without data URI prefix
         try {
