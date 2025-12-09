@@ -163,9 +163,19 @@ class PDFGenerator extends Tool {
             const finalPath = path.join(userUploadDir, pdfFilename);
             fs.writeFileSync(finalPath, pdfBuffer);
 
+            // Verify file was written
+            if (!fs.existsSync(finalPath)) {
+              throw new Error(`Failed to save PDF file to ${finalPath}`);
+            }
+
+            const actualFileSize = fs.statSync(finalPath).size;
+            logger.debug(
+              `[PDFGenerator] PDF saved successfully: ${finalPath} (${actualFileSize} bytes)`,
+            );
+
             // Filepath should be relative to uploads root: /uploads/userId/filename.pdf
             const filepath = path.posix.join('/', 'uploads', this.userId.toString(), pdfFilename);
-            const bytes = fileSize;
+            const bytes = actualFileSize;
 
             // Create file record in database
             const file = {
