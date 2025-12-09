@@ -372,12 +372,14 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
     }
 
     if (toolConstructors[tool]) {
-      const options = toolOptions[tool] || {};
+      const toolSpecificOptions = toolOptions[tool] || {};
+      // Merge tool-specific options with general options (which includes req)
+      const mergedOptions = { ...options, ...toolSpecificOptions };
       // PDF Generator needs special handling to pass req and user context
       if (tool === 'generate_pdf') {
         requestedTools[tool] = async () => {
           return new PDFGenerator({
-            req: options.req,
+            req: mergedOptions.req,
             userId: user,
             // conversationId and messageId will be extracted from req.body if available
           });
@@ -388,7 +390,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
         user,
         getAuthFields(tool),
         toolConstructors[tool],
-        options,
+        mergedOptions,
       );
       requestedTools[tool] = toolInstance;
       continue;
