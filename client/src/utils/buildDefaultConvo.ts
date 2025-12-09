@@ -25,7 +25,7 @@ function upgradeClaudeModel(
   if (model.startsWith('claude-opus-4-5-')) {
     return model; // Keep dated version as-is
   }
-  
+
   // If it's claude-opus-4-5 without date, upgrade to dated version
   if (model === 'claude-opus-4-5') {
     return 'claude-opus-4-5-20251101';
