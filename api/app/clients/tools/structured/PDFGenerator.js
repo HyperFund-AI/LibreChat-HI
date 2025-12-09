@@ -4,6 +4,7 @@ const PDFDocument = require('pdfkit');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
+const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
@@ -19,7 +20,7 @@ class PDFGenerator extends Tool {
   description =
     'Generates a PDF document from text content, conversation data, or structured information. ' +
     'Use this tool when the user asks to create, generate, or export content as a PDF. ' +
-    'The tool accepts text content, title, and optional formatting options. ' +
+    'The tool accepts text content, title, optional formatting options, and can include images from URLs or base64 data. ' +
     'Returns a file reference that can be downloaded.';
 
   schema = z.object({
@@ -45,6 +46,18 @@ class PDFGenerator extends Tool {
       .optional()
       .default(true)
       .describe('Whether to include metadata (title, creation date) in the PDF.'),
+    images: z
+      .array(
+        z
+          .string()
+          .describe(
+            'Image URL or base64-encoded image data (data:image/...;base64,... format). Can include multiple images.',
+          ),
+      )
+      .optional()
+      .describe(
+        'Optional array of image URLs or base64-encoded images to include in the PDF. Images will be embedded in the document.',
+      ),
   });
 
   constructor(fields = {}) {
@@ -75,9 +88,50 @@ class PDFGenerator extends Tool {
   }
 
   /**
+   * Downloads an image from a URL or converts base64 to buffer
+   * @param {string} imageSource - URL or base64 data URI
+   * @returns {Promise<Buffer>} Image buffer
+   */
+  async getImageBuffer(imageSource) {
+    try {
+      // Handle base64 data URIs
+      if (imageSource.startsWith('data:image/')) {
+        const base64Match = imageSource.match(/^data:image\/\w+;base64,(.+)$/);
+        if (base64Match) {
+          return Buffer.from(base64Match[1], 'base64');
+        }
+      }
+
+      // Handle URLs
+      if (imageSource.startsWith('http://') || imageSource.startsWith('https://')) {
+        const response = await axios({
+          url: imageSource,
+          responseType: 'arraybuffer',
+          timeout: 30000,
+        });
+        return Buffer.from(response.data, 'binary');
+      }
+
+      // If it's already a base64 string without data URI prefix
+      if (typeof imageSource === 'string' && imageSource.length > 100) {
+        try {
+          return Buffer.from(imageSource, 'base64');
+        } catch (e) {
+          // Not valid base64, treat as URL
+        }
+      }
+
+      throw new Error(`Invalid image source format: ${imageSource.substring(0, 50)}...`);
+    } catch (error) {
+      logger.error(`[PDFGenerator] Error loading image from ${imageSource.substring(0, 50)}:`, error);
+      throw new Error(`Failed to load image: ${error.message}`);
+    }
+  }
+
+  /**
    * Generates a PDF document from the provided content
    */
-  async generatePDF({ content, title, filename, includeMetadata }) {
+  async generatePDF({ content, title, filename, includeMetadata, images = [] }) {
     return new Promise((resolve, reject) => {
       try {
         const appConfig = this.req.config;
@@ -137,8 +191,66 @@ class PDFGenerator extends Tool {
           }
         });
 
-        // Finalize PDF
-        doc.end();
+        // Store images to process - we'll add them after content
+        const imagesToProcess = images || [];
+
+        // Process images synchronously before finalizing
+        // We'll process images in a promise and wait for them before ending the document
+        const processImagesPromise = (async () => {
+          if (imagesToProcess.length > 0) {
+            doc.moveDown(2);
+            doc.fontSize(14).font('Helvetica-Bold').text('Images:', { align: 'left' });
+            doc.moveDown(1);
+
+            for (let i = 0; i < imagesToProcess.length; i++) {
+              try {
+                const imageBuffer = await this.getImageBuffer(imagesToProcess[i]);
+                const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+                const maxWidth = pageWidth;
+                const maxHeight = 400; // Maximum height for images
+
+                // Check if we need a new page
+                const currentY = doc.y;
+                const pageHeight = doc.page.height - doc.page.margins.top - doc.page.margins.bottom;
+                if (currentY + maxHeight > pageHeight - 50) {
+                  doc.addPage();
+                }
+
+                // Add image - pdfkit will maintain aspect ratio if we specify fit
+                // Center horizontally
+                const imageX = doc.page.margins.left;
+                doc.image(imageBuffer, imageX, doc.y, {
+                  fit: [maxWidth, maxHeight],
+                });
+
+                // Move down after image
+                doc.moveDown(1);
+                if (i < imagesToProcess.length - 1) {
+                  doc.moveDown(1);
+                }
+              } catch (imageError) {
+                logger.error(`[PDFGenerator] Error adding image ${i + 1}:`, imageError);
+                doc.fontSize(10).font('Helvetica').fillColor('red');
+                doc.text(`[Image ${i + 1} could not be loaded: ${imageError.message}]`, {
+                  align: 'left',
+                });
+                doc.fillColor('black');
+                doc.moveDown(1);
+              }
+            }
+          }
+        })();
+
+        // Wait for images to be processed, then finalize PDF
+        processImagesPromise
+          .then(() => {
+            doc.end();
+          })
+          .catch((error) => {
+            logger.error('[PDFGenerator] Error processing images:', error);
+            // Still finalize the PDF even if images fail
+            doc.end();
+          });
 
         stream.on('finish', async () => {
           try {
@@ -230,7 +342,7 @@ class PDFGenerator extends Tool {
 
   async _call(args) {
     try {
-      const { content, title, filename, includeMetadata = true } = args;
+      const { content, title, filename, includeMetadata = true, images } = args;
 
       if (!content || content.trim().length === 0) {
         return JSON.stringify({
@@ -251,6 +363,7 @@ class PDFGenerator extends Tool {
         title: title || 'Generated Document',
         filename,
         includeMetadata,
+        images: images || [],
       });
 
       return JSON.stringify({
