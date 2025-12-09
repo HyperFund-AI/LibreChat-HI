@@ -372,11 +372,11 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
     }
 
     if (toolConstructors[tool]) {
-      const toolSpecificOptions = toolOptions[tool] || {};
-      // Merge tool-specific options with general options (which includes req)
-      const mergedOptions = { ...options, ...toolSpecificOptions };
       // PDF Generator needs special handling to pass req and user context
       if (tool === 'generate_pdf') {
+        const toolSpecificOptions = toolOptions[tool] || {};
+        // Merge tool-specific options with general options (which includes req)
+        const mergedOptions = { ...options, ...toolSpecificOptions };
         requestedTools[tool] = async () => {
           return new PDFGenerator({
             req: mergedOptions.req,
@@ -386,11 +386,13 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
         };
         continue;
       }
+      // For other tools, use original behavior (only tool-specific options)
+      const toolSpecificOptions = toolOptions[tool] || {};
       const toolInstance = loadToolWithAuth(
         user,
         getAuthFields(tool),
         toolConstructors[tool],
-        mergedOptions,
+        toolSpecificOptions,
       );
       requestedTools[tool] = toolInstance;
       continue;
