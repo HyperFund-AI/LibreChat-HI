@@ -8,6 +8,7 @@ const {
 } = require('~/server/middleware');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const { saveMessage } = require('~/models');
+const { DR_STERLING_AGENT_ID } = require('~/server/services/Teams');
 
 function createCloseHandler(abortController) {
   return function (manual) {
@@ -53,6 +54,14 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
 
   const newConvo = !conversationId;
   const userId = req.user.id;
+
+  // Check if Dr. Sterling was activated by middleware
+  const drSterlingActivated = req.drSterlingContext?.activated || false;
+  const userName = req.drSterlingContext?.userName || null;
+  
+  if (drSterlingActivated) {
+    logger.info(`[AgentController] 🎩 Dr. Sterling mode active for user: ${userName}`);
+  }
 
   // Create handler to avoid capturing the entire parent scope
   let getReqData = (data = {}) => {
@@ -132,6 +141,11 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       }
     };
     cleanupHandlers.push(removePrelimHandler);
+    // Log agent info before initialization
+    if (drSterlingActivated) {
+      logger.info(`[AgentController] 🎩 About to initialize client with agent_id: ${endpointOption?.agent_id}`);
+    }
+    
     /** @type {{ client: TAgentClient; userMCPAuthMap?: Record<string, Record<string, string>> }} */
     const result = await initializeClient({
       req,
@@ -139,6 +153,14 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       endpointOption,
       signal: prelimAbortController.signal,
     });
+    
+    // Log what agent was actually used
+    if (drSterlingActivated && result?.client) {
+      const usedAgent = result.client.options?.agent;
+      logger.info(`[AgentController] 🎩 Client initialized. Agent used: ${usedAgent?.name || usedAgent?.id || 'unknown'}`);
+      logger.debug(`[AgentController] 🎩 Client agent tools: ${JSON.stringify(usedAgent?.tools || [])}`);
+    }
+    
     if (prelimAbortController.signal?.aborted) {
       prelimAbortController = null;
       throw new Error('Request was aborted before initialization could complete');

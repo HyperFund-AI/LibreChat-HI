@@ -2,12 +2,10 @@ const undici = require('undici');
 const { get } = require('lodash');
 const fetch = require('node-fetch');
 const passport = require('passport');
-const client = require('openid-client');
 const jwtDecode = require('jsonwebtoken/decode');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { hashToken, logger } = require('@librechat/data-schemas');
 const { CacheKeys, ErrorTypes } = require('librechat-data-provider');
-const { Strategy: OpenIDStrategy } = require('openid-client/passport');
 const {
   isEnabled,
   logHeaders,
@@ -25,6 +23,9 @@ const getLogStores = require('~/cache/getLogStores');
  * @typedef {import('openid-client').ClientMetadata} ClientMetadata
  * @typedef {import('openid-client').Configuration} Configuration
  **/
+
+/** @type {typeof import('openid-client')} */
+let client;
 
 /**
  * @param {string} url
@@ -98,41 +99,6 @@ This violates RFC 7235 and may cause issues with strict OAuth clients. Removing 
 
 /** @typedef {Configuration | null}  */
 let openidConfig = null;
-
-//overload currenturl function because of express version 4 buggy req.host doesn't include port
-//More info https://github.com/panva/openid-client/pull/713
-
-class CustomOpenIDStrategy extends OpenIDStrategy {
-  currentUrl(req) {
-    const hostAndProtocol = process.env.DOMAIN_SERVER;
-    return new URL(`${hostAndProtocol}${req.originalUrl ?? req.url}`);
-  }
-
-  authorizationRequestParams(req, options) {
-    const params = super.authorizationRequestParams(req, options);
-    if (options?.state && !params.has('state')) {
-      params.set('state', options.state);
-    }
-
-    if (process.env.OPENID_AUDIENCE) {
-      params.set('audience', process.env.OPENID_AUDIENCE);
-      logger.debug(
-        `[openidStrategy] Adding audience to authorization request: ${process.env.OPENID_AUDIENCE}`,
-      );
-    }
-
-    /** Generate nonce for federated providers that require it */
-    const shouldGenerateNonce = isEnabled(process.env.OPENID_GENERATE_NONCE);
-    if (shouldGenerateNonce && !params.has('nonce') && this._sessionKey) {
-      const crypto = require('crypto');
-      const nonce = crypto.randomBytes(16).toString('hex');
-      params.set('nonce', nonce);
-      logger.debug('[openidStrategy] Generated nonce for federated provider:', nonce);
-    }
-
-    return params;
-  }
-}
 
 /**
  * Exchange the access token for a new access token using the on-behalf-of flow if required.
@@ -294,6 +260,43 @@ function convertToUsername(input, defaultValue = '') {
  */
 async function setupOpenId() {
   try {
+    // Dynamic import of ESM modules
+    client = await import('openid-client');
+    const { Strategy: OpenIDStrategy } = await import('openid-client/passport');
+
+    // Define CustomOpenIDStrategy inside setupOpenId after imports are loaded
+    class CustomOpenIDStrategy extends OpenIDStrategy {
+      currentUrl(req) {
+        const hostAndProtocol = process.env.DOMAIN_SERVER;
+        return new URL(`${hostAndProtocol}${req.originalUrl ?? req.url}`);
+      }
+
+      authorizationRequestParams(req, options) {
+        const params = super.authorizationRequestParams(req, options);
+        if (options?.state && !params.has('state')) {
+          params.set('state', options.state);
+        }
+
+        if (process.env.OPENID_AUDIENCE) {
+          params.set('audience', process.env.OPENID_AUDIENCE);
+          logger.debug(
+            `[openidStrategy] Adding audience to authorization request: ${process.env.OPENID_AUDIENCE}`,
+          );
+        }
+
+        /** Generate nonce for federated providers that require it */
+        const shouldGenerateNonce = isEnabled(process.env.OPENID_GENERATE_NONCE);
+        if (shouldGenerateNonce && !params.has('nonce') && this._sessionKey) {
+          const crypto = require('crypto');
+          const nonce = crypto.randomBytes(16).toString('hex');
+          params.set('nonce', nonce);
+          logger.debug('[openidStrategy] Generated nonce for federated provider:', nonce);
+        }
+
+        return params;
+      }
+    }
+
     const shouldGenerateNonce = isEnabled(process.env.OPENID_GENERATE_NONCE);
 
     /** @type {ClientMetadata} */

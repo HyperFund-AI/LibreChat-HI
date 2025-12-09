@@ -82,10 +82,24 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     throw new Error('No agent promise provided');
   }
 
+  logger.debug(`[initializeClient] Awaiting agent promise. agent_id in endpointOption: ${endpointOption.agent_id}`);
   const primaryAgent = await endpointOption.agent;
   delete endpointOption.agent;
   if (!primaryAgent) {
+    logger.error(`[initializeClient] Primary agent is NULL! agent_id was: ${endpointOption.agent_id}`);
     throw new Error('Agent not found');
+  }
+  
+  logger.debug(`[initializeClient] Primary agent resolved: id=${primaryAgent.id}, name=${primaryAgent.name}, tools=${JSON.stringify(primaryAgent.tools || [])}`);
+  logger.debug(`[initializeClient] Agent instructions length: ${primaryAgent.instructions?.length || 0} characters`);
+  
+  // Check if this is Dr. Sterling (for debugging)
+  if (primaryAgent.id === 'dr_sterling_coordinator' || primaryAgent.isTeamCoordinator) {
+    logger.info(`[initializeClient] 🎩 Dr. Sterling agent detected!`);
+    logger.info(`[initializeClient] 🎩 Instructions preview: ${primaryAgent.instructions?.substring(0, 200) || 'NO INSTRUCTIONS!'}`);
+    if (!primaryAgent.instructions || primaryAgent.instructions.length === 0) {
+      logger.error(`[initializeClient] 🎩 WARNING: Dr. Sterling has NO instructions!`);
+    }
   }
 
   const modelsConfig = await getModelsConfig(req);
