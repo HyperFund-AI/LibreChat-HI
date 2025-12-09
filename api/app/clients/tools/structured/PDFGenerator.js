@@ -22,6 +22,9 @@ class PDFGenerator extends Tool {
     'Generates a PDF document from text content, conversation data, or structured information. ' +
     'Use this tool when the user asks to create, generate, or export content as a PDF. ' +
     'The tool accepts text content, title, optional formatting options, and can include images from URLs or base64 data. ' +
+    'IMPORTANT: If the user requests images in the PDF, you can search the web for image URLs using web_search tools, ' +
+    'or generate images using image generation tools (like DALL-E, Flux, etc.), then pass those image URLs to this tool. ' +
+    'You can also use image URLs from any publicly accessible source on the internet. ' +
     'Returns a file reference that can be downloaded.';
 
   schema = z.object({
@@ -52,12 +55,18 @@ class PDFGenerator extends Tool {
         z
           .string()
           .describe(
-            'Image URL or base64-encoded image data (data:image/...;base64,... format). Can include multiple images.',
+            'Image URL (http:// or https://) or base64-encoded image data (data:image/...;base64,... format). ' +
+            'You can obtain image URLs by: 1) Using web_search tools to find images online, ' +
+            '2) Using image generation tools (DALL-E, Flux, etc.) which return image URLs, ' +
+            '3) Using any publicly accessible image URL from the internet. ' +
+            'Can include multiple images.',
           ),
       )
       .optional()
       .describe(
-        'Optional array of image URLs or base64-encoded images to include in the PDF. Images will be embedded in the document.',
+        'Optional array of image URLs or base64-encoded images to include in the PDF. ' +
+        'Images will be embedded in the document. ' +
+        'If the user requests images, use web_search or image generation tools first to obtain image URLs, then pass them here.',
       ),
   });
 
