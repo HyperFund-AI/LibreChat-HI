@@ -22,9 +22,14 @@ class PDFGenerator extends Tool {
     'Generates a PDF document from text content, conversation data, or structured information. ' +
     'Use this tool when the user asks to create, generate, or export content as a PDF. ' +
     'The tool accepts text content, title, optional formatting options, and can include images from URLs or base64 data. ' +
-    'IMPORTANT: If the user requests images in the PDF, you can search the web for image URLs using web_search tools, ' +
-    'or generate images using image generation tools (like DALL-E, Flux, etc.), then pass those image URLs to this tool. ' +
-    'You can also use image URLs from any publicly accessible source on the internet. ' +
+    'WORKFLOW FOR IMAGES: When the user requests images in a PDF, you MUST follow these steps: ' +
+    '1) FIRST, check what tools you have available - look for web_search tools (google, tavily_search_results_json, traversaal_search, etc.) ' +
+    'or image generation tools (dalle, flux, stable-diffusion, image_gen_oai, etc.). ' +
+    '2) If you have web_search tools available, use them to search for image URLs (e.g., "cow image" or "bald eagle photo"). ' +
+    '3) If you have image generation tools available, use them to generate images and get the returned image URLs. ' +
+    '4) THEN, pass the obtained image URLs to this generate_pdf tool in the images parameter. ' +
+    '5) You can also use any publicly accessible image URL from the internet. ' +
+    'DO NOT tell the user you cannot find images - instead, use your available tools to obtain image URLs first. ' +
     'Returns a file reference that can be downloaded.';
 
   schema = z.object({
