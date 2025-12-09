@@ -1,6 +1,6 @@
 const { sendEvent } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const { Constants } = require('librechat-data-provider');
+const { Constants, ContentTypes } = require('librechat-data-provider');
 const {
   handleAbortError,
   createAbortController,
@@ -31,9 +31,7 @@ function createCloseHandler(abortController) {
 
 /**
  * Handles team orchestration when a conversation has team agents
- * @param {Request} req - Express request
- * @param {Response} res - Express response
- * @param {Object} params - Parameters including text, conversationId, teamAgents
+ * Shows collaboration progress ("thinking") and streams final response
  */
 async function handleTeamOrchestration(req, res, { text, conversationId, parentMessageId, teamAgents, userId }) {
   const { v4: uuidv4 } = require('uuid');
@@ -42,18 +40,13 @@ async function handleTeamOrchestration(req, res, { text, conversationId, parentM
   try {
     logger.info(`[handleTeamOrchestration] Starting with ${teamAgents.length} team agents`);
     
-    // Generate IDs
     const userMessageId = uuidv4();
     const responseMessageId = uuidv4();
     
-    // Get conversation history
     const conversationHistory = await getMessages({ conversationId }, '-createdAt') || [];
-    
-    // Get file context if available
-    let fileContext = '';
     const conversation = await getConvo(userId, conversationId);
     
-    // Create user message
+    // Create and save user message
     const userMessage = {
       messageId: userMessageId,
       conversationId: conversationId,
@@ -64,8 +57,6 @@ async function handleTeamOrchestration(req, res, { text, conversationId, parentM
       sender: 'User',
       endpoint: 'agents',
     };
-
-    // Save user message
     await saveMessage(req, userMessage, { context: 'handleTeamOrchestration - user message' });
 
     // Send sync event to establish the conversation
@@ -84,39 +75,63 @@ async function handleTeamOrchestration(req, res, { text, conversationId, parentM
       requestMessage: userMessage,
     });
 
-    // Track accumulated response for streaming
-    let accumulatedText = '';
-    let agentIndex = 0;
+    // Track streamed content
+    let streamedText = '';
 
-    // Orchestrate team response
+    // Orchestrate team response with callbacks
     const orchestrationResult = await orchestrateTeamResponse({
       userMessage: text,
       teamAgents,
       conversationHistory,
-      fileContext,
+      fileContext: '',
       config: req.config,
-      onAgentStart: (agent) => {
-        agentIndex++;
-        const header = `\n\n## 🤖 ${agent.name}\n_${agent.role}_\n\n`;
-        accumulatedText += header;
-        
-        // Stream the header
+      
+      // Show "thinking" process - team collaboration
+      onThinking: (thinking) => {
+        // Send as a "step" event to show progress
         sendEvent(res, {
-          type: 'text',
-          text: header,
-          index: 0,
-          messageId: responseMessageId,
-          conversationId: conversationId,
+          event: 'on_thinking',
+          data: {
+            agent: thinking.agent,
+            role: thinking.role || '',
+            action: thinking.action,
+            message: thinking.message,
+          },
         });
       },
-      onAgentComplete: (agentResponse) => {
-        const content = `${agentResponse.response}\n\n---\n`;
-        accumulatedText += content;
-        
-        // Stream the agent's response
+      
+      onAgentStart: (agent) => {
+        // Show which agent is starting
         sendEvent(res, {
-          type: 'text',
-          text: content,
+          event: 'on_agent_start',
+          data: {
+            agentId: agent.agentId,
+            agentName: agent.name,
+            agentRole: agent.role,
+            phase: agent.phase || 'working',
+          },
+        });
+      },
+      
+      onAgentComplete: (agentResponse) => {
+        // Show agent completed
+        sendEvent(res, {
+          event: 'on_agent_complete',
+          data: {
+            agentName: agentResponse.agentName,
+            agentRole: agentResponse.agentRole,
+          },
+        });
+      },
+      
+      // Stream the final synthesized response - send accumulated text
+      onStream: (chunk) => {
+        streamedText += chunk;
+        // Send the FULL accumulated text, not just the chunk
+        // This is how the frontend content handler expects it
+        sendEvent(res, {
+          type: ContentTypes.TEXT,
+          text: streamedText,
           index: 0,
           messageId: responseMessageId,
           conversationId: conversationId,
@@ -124,12 +139,12 @@ async function handleTeamOrchestration(req, res, { text, conversationId, parentM
       },
     });
 
-    // Use the formatted markdown response
+    // Final response text
     const finalText = orchestrationResult.success 
       ? orchestrationResult.formattedResponse 
       : `Error: ${orchestrationResult.error || 'Team orchestration failed'}`;
 
-    // Create response message
+    // Create and save response message
     const responseMessage = {
       messageId: responseMessageId,
       conversationId: conversationId,
@@ -143,8 +158,6 @@ async function handleTeamOrchestration(req, res, { text, conversationId, parentM
       unfinished: false,
       error: !orchestrationResult.success,
     };
-
-    // Save response message
     await saveMessage(req, responseMessage, { context: 'handleTeamOrchestration - team response' });
 
     // Update conversation
@@ -155,7 +168,6 @@ async function handleTeamOrchestration(req, res, { text, conversationId, parentM
       model: 'team-collaboration',
       title: conversation?.title || 'Team Conversation',
     };
-
     await saveConvo(req, convoUpdate, { context: 'handleTeamOrchestration - save convo' });
 
     // Send final event
@@ -168,19 +180,9 @@ async function handleTeamOrchestration(req, res, { text, conversationId, parentM
     });
 
     res.end();
-    logger.info(`[handleTeamOrchestration] Completed - ${teamAgents.length} agents responded`);
+    logger.info(`[handleTeamOrchestration] Completed successfully`);
   } catch (error) {
     logger.error('[handleTeamOrchestration] Error:', error);
-    
-    const errorResponse = {
-      messageId: uuidv4(),
-      conversationId: conversationId,
-      parentMessageId: parentMessageId || Constants.NO_PARENT,
-      isCreatedByUser: false,
-      text: `Team collaboration error: ${error.message}`,
-      sender: 'Team',
-      error: true,
-    };
     
     sendEvent(res, {
       final: true,
@@ -192,7 +194,15 @@ async function handleTeamOrchestration(req, res, { text, conversationId, parentM
         isCreatedByUser: true,
         text,
       },
-      responseMessage: errorResponse,
+      responseMessage: {
+        messageId: uuidv4(),
+        conversationId: conversationId,
+        parentMessageId: parentMessageId || Constants.NO_PARENT,
+        isCreatedByUser: false,
+        text: `Team collaboration error: ${error.message}`,
+        sender: 'Team',
+        error: true,
+      },
     });
     res.end();
   }

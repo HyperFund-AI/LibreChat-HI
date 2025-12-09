@@ -16,7 +16,7 @@ import type { TResData } from '~/common';
 import { useGenTitleMutation, useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
-import store from '~/store';
+import store, { teamCollaborationAtom, TeamCollaborationState, TeamThinkingStep } from '~/store';
 
 const clearDraft = (conversationId?: string | null) => {
   if (conversationId) {
@@ -51,6 +51,7 @@ export default function useSSE(
   const [completed, setCompleted] = useState(new Set());
   const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
+  const setTeamCollaboration = useSetRecoilState(teamCollaborationAtom);
 
   const {
     setMessages,
@@ -124,6 +125,23 @@ export default function useSSE(
       if (data.final != null) {
         clearDraft(submission.conversation?.conversationId);
         const { plugins } = data;
+        
+        // Mark team collaboration as complete and reset after delay
+        setTeamCollaboration((prev: TeamCollaborationState) => ({
+          ...prev,
+          phase: 'complete',
+          isActive: prev.steps.length > 0, // Keep active briefly to show completion
+        }));
+        setTimeout(() => {
+          setTeamCollaboration({
+            isActive: false,
+            conversationId: null,
+            steps: [],
+            currentAgent: null,
+            phase: 'idle',
+          });
+        }, 3000);
+        
         try {
           finalHandler(data, { ...submission, plugins } as EventSubmission);
         } catch (error) {
@@ -145,10 +163,59 @@ export default function useSSE(
 
         createdHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.event != null) {
-        stepHandler(data, { ...submission, userMessage } as EventSubmission);
+        // Handle team collaboration events
+        if (data.event === 'on_thinking' || data.event === 'on_agent_start' || data.event === 'on_agent_complete') {
+          const eventData = data.data || {};
+          const conversationId = submission?.conversation?.conversationId || '';
+          
+          setTeamCollaboration((prev: TeamCollaborationState) => {
+            // Determine phase based on event
+            let phase = prev.phase;
+            if (data.event === 'on_thinking') {
+              if (eventData.action === 'analyzing' || eventData.action === 'planned') {
+                phase = 'planning';
+              } else if (eventData.action === 'working' || eventData.action === 'completed') {
+                phase = 'specialist-work';
+              } else if (eventData.action === 'synthesizing') {
+                phase = 'synthesis';
+              } else if (eventData.action === 'complete') {
+                phase = 'complete';
+              }
+            }
+
+            const newStep: TeamThinkingStep = {
+              id: v4(),
+              agent: eventData.agent || eventData.agentName || 'Team',
+              role: eventData.role || eventData.agentRole || '',
+              action: eventData.action || (data.event === 'on_agent_start' ? 'working' : 'completed'),
+              message: eventData.message || `${eventData.agentName || 'Agent'} ${data.event === 'on_agent_start' ? 'started working' : 'finished'}`,
+              timestamp: Date.now(),
+            };
+
+            return {
+              isActive: true,
+              conversationId,
+              steps: [...prev.steps, newStep],
+              currentAgent: eventData.agent || eventData.agentName || null,
+              phase,
+            };
+          });
+        } else {
+          stepHandler(data, { ...submission, userMessage } as EventSubmission);
+        }
       } else if (data.sync != null) {
         const runId = v4();
         setActiveRunId(runId);
+        
+        // Reset team collaboration state for new response
+        setTeamCollaboration({
+          isActive: false,
+          conversationId: null,
+          steps: [],
+          currentAgent: null,
+          phase: 'idle',
+        });
+        
         /* synchronize messages to Assistants API as well as with real DB ID's */
         syncHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.type != null) {

@@ -12,7 +12,7 @@ const {
 const {
   executeLeadAnalysis,
   executeSpecialist,
-  synthesizeDeliverable,
+  synthesizeDeliverableStreaming,
   orchestrateTeamResponse,
   shouldUseTeamOrchestration,
 } = require('./orchestrator');
@@ -37,7 +37,7 @@ module.exports = {
   // Team Orchestration
   executeLeadAnalysis,
   executeSpecialist,
-  synthesizeDeliverable,
+  synthesizeDeliverableStreaming,
   orchestrateTeamResponse,
   shouldUseTeamOrchestration,
   

@@ -10,6 +10,7 @@ import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } fr
 import { useChatHelpers, useAddedResponse, useSSE } from '~/hooks';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
+import TeamCollaboration from './TeamCollaboration';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
@@ -78,6 +79,8 @@ function ChatView({ index = 0 }: { index?: number }) {
     <ChatFormProvider {...methods}>
       <ChatContext.Provider value={chatHelpers}>
         <AddedChatContext.Provider value={addedChatHelpers}>
+          {/* Team Collaboration - fixed position indicator */}
+          <TeamCollaboration />
           <Presentation>
             <div className="flex h-full w-full flex-col">
               {!isLoading && <Header />}
