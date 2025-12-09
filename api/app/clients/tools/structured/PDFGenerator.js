@@ -127,6 +127,7 @@ class PDFGenerator extends Tool {
         const isOpenAIUrl =
           imageSource.includes('oaidalleapi') ||
           imageSource.includes('openai.com') ||
+          imageSource.includes('oaiusercontent.com') ||
           imageSource.includes('azure.com');
 
         const requestConfig = {
@@ -155,11 +156,26 @@ class PDFGenerator extends Tool {
           // Handle 403 Forbidden errors specifically
           if (axiosError.response && axiosError.response.status === 403) {
             if (isOpenAIUrl) {
-              throw new Error(
-                'OpenAI image URL requires authentication or has expired. ' +
-                  'The image may need to be accessed as a base64 data URI instead of a URL. ' +
-                  'Please ensure the image generation tool returns a base64 data URI.',
-              );
+              // Try without authentication as a fallback (some URLs might work without auth)
+              try {
+                logger.warn(
+                  `[PDFGenerator] OpenAI URL returned 403 with auth, trying without authentication: ${imageSource.substring(0, 100)}...`,
+                );
+                const fallbackResponse = await axios({
+                  url: imageSource,
+                  responseType: 'arraybuffer',
+                  timeout: 30000,
+                });
+                imageBuffer = Buffer.from(fallbackResponse.data, 'binary');
+                logger.info('[PDFGenerator] Successfully fetched OpenAI image without authentication');
+              } catch (fallbackError) {
+                throw new Error(
+                  'OpenAI image URL requires authentication or has expired. ' +
+                    'When using image generation tools (like DALL-E) in agent mode, they return base64 data URIs. ' +
+                    'Please use the base64 data URI (data:image/...;base64,...) instead of the URL. ' +
+                    'The base64 data URI is available in the tool output content.',
+                );
+              }
             } else {
               throw new Error(
                 `Image URL returned 403 Forbidden. The image may require authentication or may have expired. ` +
