@@ -27,6 +27,7 @@ export enum FileContext {
   image_generation = 'image_generation',
   assistants_output = 'assistants_output',
   message_attachment = 'message_attachment',
+  pdf_generation = 'pdf_generation',
   filename = 'filename',
   updatedAt = 'updatedAt',
   source = 'source',
