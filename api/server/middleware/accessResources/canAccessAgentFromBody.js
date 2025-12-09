@@ -1,7 +1,11 @@
 const { logger } = require('@librechat/data-schemas');
-const { Constants, isAgentsEndpoint, ResourceType } = require('librechat-data-provider');
+const { Constants, isAgentsEndpoint, ResourceType, EModelEndpoint } = require('librechat-data-provider');
 const { canAccessResource } = require('./canAccessResource');
 const { getAgent } = require('~/models/Agent');
+
+// Dr. Sterling activation pattern - "Dr. Sterling, this is [Name]"
+const DR_STERLING_ACTIVATION_PATTERN = /^dr\.?\s*sterling,?\s*this\s+is\s+/i;
+const DR_STERLING_AGENT_ID = 'dr_sterling_coordinator';
 
 /**
  * Agent ID resolver function for agent_id from request body
@@ -47,10 +51,57 @@ const canAccessAgentFromBody = (options) => {
 
   return async (req, res, next) => {
     try {
-      const { endpoint, agent_id } = req.body;
+      const { endpoint, agent_id, text } = req.body;
       let agentId = agent_id;
+      let finalEndpoint = endpoint;
 
-      if (!isAgentsEndpoint(endpoint)) {
+      // Check for Dr. Sterling activation phrase BEFORE checking agent_id
+      // This must happen before buildEndpointOption middleware runs
+      const userText = text || '';
+      if (DR_STERLING_ACTIVATION_PATTERN.test(userText)) {
+        const nameMatch = userText.match(/^dr\.?\s*sterling,?\s*this\s+is\s+([^.!?\n]+)/i);
+        const userName = nameMatch ? nameMatch[1].trim() : 'User';
+        
+        logger.info(`[canAccessAgentFromBody] 🎩 Dr. Sterling activation detected! User: ${userName}`);
+        
+        // Ensure Dr. Sterling agent exists before we try to check permissions
+        try {
+          const { getDrSterlingAgent } = require('~/server/services/Teams');
+          const drSterlingAgent = await getDrSterlingAgent(req.user.id);
+          if (!drSterlingAgent) {
+            logger.error(`[canAccessAgentFromBody] 🎩 Failed to get/create Dr. Sterling agent`);
+            return res.status(500).json({
+              error: 'Internal Server Error',
+              message: 'Failed to initialize Dr. Sterling agent',
+            });
+          }
+          logger.info(`[canAccessAgentFromBody] 🎩 Dr. Sterling agent ready: id=${drSterlingAgent.id}`);
+        } catch (sterlingError) {
+          logger.error(`[canAccessAgentFromBody] 🎩 Error ensuring Dr. Sterling exists:`, sterlingError);
+          return res.status(500).json({
+            error: 'Internal Server Error',
+            message: 'Failed to initialize Dr. Sterling agent',
+          });
+        }
+        
+        // Set agent_id and endpoint for Dr. Sterling BEFORE validation
+        req.body.agent_id = DR_STERLING_AGENT_ID;
+        req.body.endpoint = EModelEndpoint.agents;
+        agentId = DR_STERLING_AGENT_ID;
+        finalEndpoint = EModelEndpoint.agents;
+        
+        // Store activation context for later use
+        req.drSterlingContext = {
+          activated: true,
+          userName,
+          activationPhrase: userText,
+        };
+        
+        logger.info(`[canAccessAgentFromBody] 🎩 Agent ID set to: ${DR_STERLING_AGENT_ID}`);
+        logger.info(`[canAccessAgentFromBody] 🎩 Endpoint forced to: ${EModelEndpoint.agents}`);
+      }
+
+      if (!isAgentsEndpoint(finalEndpoint)) {
         agentId = Constants.EPHEMERAL_AGENT_ID;
       }
 

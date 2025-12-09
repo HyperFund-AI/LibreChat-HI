@@ -90,8 +90,9 @@ async function buildEndpointOption(req, res, next) {
       isAgentsEndpoint(endpoint) || req.baseUrl.startsWith(EndpointURLs[EModelEndpoint.agents]);
     
     // Check for Dr. Sterling activation phrase BEFORE building agent options
+    // Note: canAccessAgentFromBody may have already activated Dr. Sterling, so check that first
     const userText = req.body.text || '';
-    if (DR_STERLING_ACTIVATION_PATTERN.test(userText)) {
+    if (!req.drSterlingContext?.activated && DR_STERLING_ACTIVATION_PATTERN.test(userText)) {
       const nameMatch = userText.match(/^dr\.?\s*sterling,?\s*this\s+is\s+([^.!?\n]+)/i);
       const userName = nameMatch ? nameMatch[1].trim() : 'User';
       

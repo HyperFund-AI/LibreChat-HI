@@ -261,6 +261,9 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     // Get the final conversationId from conversation data (important for first message when conversationId was null)
     const finalConversationId = conversation.conversationId || conversationId;
     
+    // Team creation from Dr. Sterling's output is now handled via explicit user approval
+    // through the TeamIndicator component in the frontend, which calls /api/teams/:conversationId/parse
+    
     // Trigger team creation for PDF/document files if not already created
     // Use finalConversationId which is set even on first message
     logger.info(`[AgentController] Checking team creation - finalConversationId: ${finalConversationId}, files: ${req.body.files ? req.body.files.length : 0}`);

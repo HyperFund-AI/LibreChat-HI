@@ -980,3 +980,61 @@ export function getGraphApiToken(params: q.GraphTokenParams): Promise<q.GraphTok
 export function getDomainServerBaseUrl(): string {
   return `${endpoints.apiBaseUrl()}/api`;
 }
+
+/* Teams */
+export interface TeamAgent {
+  agentId: string;
+  role: string;
+  name: string;
+  instructions?: string;
+  provider?: string;
+  model?: string;
+  responsibilities?: string;
+  tier?: string;
+  behavioralLevel?: string;
+}
+
+export interface DrSterlingResponse {
+  success: boolean;
+  agent: {
+    id: string;
+    name: string;
+    description: string;
+    avatar: { type: string; value: string };
+  };
+}
+
+export interface TeamParseResponse {
+  success: boolean;
+  projectName?: string;
+  complexity?: string;
+  teamSize?: number;
+  teamAgents: TeamAgent[];
+  error?: string;
+}
+
+export interface TeamGetResponse {
+  success: boolean;
+  conversationId: string;
+  teamAgents: TeamAgent[];
+  count: number;
+}
+
+export function getDrSterlingAgent(): Promise<DrSterlingResponse> {
+  return request.get(endpoints.teamDrSterling());
+}
+
+export function getTeamAgents(conversationId: string): Promise<TeamGetResponse> {
+  return request.get(endpoints.teamByConversation(conversationId));
+}
+
+export function parseTeamFromMarkdown(
+  conversationId: string,
+  markdownContent: string,
+): Promise<TeamParseResponse> {
+  return request.post(endpoints.teamParse(conversationId), { markdownContent });
+}
+
+export function clearTeamAgents(conversationId: string): Promise<{ success: boolean; message: string }> {
+  return request.delete(endpoints.teamByConversation(conversationId));
+}

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Users, Loader2, CheckCircle2, X, Bot, Briefcase, FileText, Sparkles, Save } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Users, Loader2, CheckCircle2, X, Bot, Briefcase, FileText, Sparkles, Wand2 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, Constants, dataService } from 'librechat-data-provider';
-import type { TConversation } from 'librechat-data-provider';
+import type { TConversation, TMessage } from 'librechat-data-provider';
 
 interface TeamAgent {
   agentId: string;
@@ -19,6 +19,15 @@ interface TeamAgent {
 interface TeamIndicatorProps {
   conversation: TConversation | null;
 }
+
+// Team specification detection patterns
+const TEAM_SPEC_PATTERNS = [
+  '# SUPERHUMAN TEAM:',
+  '## SUPERHUMAN SPECIFICATIONS',
+  'SUPERHUMAN TEAM:',
+  '## TEAM COMPOSITION',
+  '### Team Member',
+];
 
 // Role to color mapping for avatars
 const getRoleColor = (role: string): string => {
@@ -67,18 +76,57 @@ const getTierBadge = (tier?: string) => {
   }
 };
 
+// Extract text content from a message
+const extractMessageText = (message: TMessage): string => {
+  if (typeof message.text === 'string' && message.text) {
+    return message.text;
+  }
+  if (message.content && Array.isArray(message.content)) {
+    return message.content
+      .filter((part: unknown) => {
+        const p = part as { type?: string; text?: unknown };
+        return p && p.type === 'text' && p.text;
+      })
+      .map((part: unknown) => {
+        const p = part as { text?: string | { value?: string } };
+        if (typeof p.text === 'string') return p.text;
+        if (p.text && typeof p.text === 'object' && 'value' in p.text) return p.text.value || '';
+        return '';
+      })
+      .join('\n');
+  }
+  return '';
+};
+
+// Check if text contains a team specification
+const containsTeamSpec = (text: string): boolean => {
+  if (!text || text.length < 100) return false;
+  return TEAM_SPEC_PATTERNS.some(pattern => text.includes(pattern));
+};
+
 export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [previousTeamCount, setPreviousTeamCount] = useState(0);
   const [selectedAgent, setSelectedAgent] = useState<TeamAgent | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
   const queryClient = useQueryClient();
   
   const conversationId = conversation?.conversationId;
   const isNewConvo = !conversationId || conversationId === Constants.NEW_CONVO;
 
+  // Get messages for the conversation
+  const { data: messages } = useQuery<TMessage[]>(
+    [QueryKeys.messages, conversationId],
+    () => dataService.getMessagesByConvoId(conversationId!),
+    {
+      enabled: !isNewConvo && !!conversationId,
+      refetchOnWindowFocus: false,
+    },
+  );
+
   // Poll for team agents
-  const { data: convoData, isLoading } = useQuery<TConversation>(
+  const { data: convoData, isLoading, refetch: refetchConvo } = useQuery<TConversation>(
     [QueryKeys.conversation, conversationId, 'team'],
     () => dataService.getConversationById(conversationId!),
     {
@@ -86,7 +134,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
       refetchInterval: (data) => {
         const teamAgents = (data as TConversation & { teamAgents?: TeamAgent[] })?.teamAgents;
         const hasTeam = teamAgents && teamAgents.length > 0;
-        return hasTeam ? false : 3000;
+        return hasTeam ? false : 5000;
       },
       refetchOnWindowFocus: false,
     },
@@ -94,6 +142,74 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
 
   const teamAgents = ((convoData as TConversation & { teamAgents?: TeamAgent[] })?.teamAgents || []) as TeamAgent[];
   const hasTeam = teamAgents.length > 0;
+
+  // Find messages that contain team specifications
+  const teamSpecMessage = useMemo(() => {
+    if (!messages || hasTeam) return null;
+    
+    // Look for assistant messages with team specs (check from newest to oldest)
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (!msg.isCreatedByUser) {
+        const text = extractMessageText(msg);
+        if (containsTeamSpec(text)) {
+          return { message: msg, text };
+        }
+      }
+    }
+    return null;
+  }, [messages, hasTeam]);
+
+  // Mutation to create team from markdown
+  const createTeamMutation = useMutation({
+    mutationFn: async (markdownContent: string) => {
+      console.log('[TeamIndicator] mutationFn called with markdown length:', markdownContent.length);
+      console.log('[TeamIndicator] Calling API: /api/teams/' + conversationId + '/parse');
+      try {
+        const result = await dataService.parseTeamFromMarkdown(conversationId!, markdownContent);
+        console.log('[TeamIndicator] API result:', result);
+        return result;
+      } catch (error) {
+        console.error('[TeamIndicator] API error:', error);
+        throw error;
+      }
+    },
+    onSuccess: (data) => {
+      console.log('[TeamIndicator] onSuccess:', data);
+      if (data.success) {
+        setShowSuccess(true);
+        // Invalidate conversation query to refresh team agents
+        queryClient.invalidateQueries([QueryKeys.conversation, conversationId]);
+        refetchConvo();
+        setTimeout(() => setShowSuccess(false), 5000);
+      }
+    },
+    onError: (error) => {
+      console.error('[TeamIndicator] onError:', error);
+    },
+    onSettled: () => {
+      console.log('[TeamIndicator] onSettled');
+      setIsCreating(false);
+    },
+  });
+
+  const handleCreateTeam = () => {
+    console.log('[TeamIndicator] handleCreateTeam called');
+    console.log('[TeamIndicator] conversationId:', conversationId);
+    console.log('[TeamIndicator] teamSpecMessage:', teamSpecMessage ? 'exists' : 'null');
+    console.log('[TeamIndicator] teamSpecMessage text length:', teamSpecMessage?.text?.length || 0);
+    
+    if (teamSpecMessage && conversationId) {
+      console.log('[TeamIndicator] Starting team creation...');
+      setIsCreating(true);
+      createTeamMutation.mutate(teamSpecMessage.text);
+    } else {
+      console.error('[TeamIndicator] Cannot create team - missing data:', {
+        hasTeamSpecMessage: !!teamSpecMessage,
+        hasConversationId: !!conversationId,
+      });
+    }
+  };
 
   // Show success animation when team is created
   useEffect(() => {
@@ -119,13 +235,42 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
 
   if (isNewConvo) return null;
 
-  if (isLoading && !hasTeam) {
+  // Show "Create Team" button if we detect a team spec but no team exists yet
+  if (!hasTeam && teamSpecMessage) {
     return (
-      <div className="flex items-center gap-1.5 rounded-md bg-yellow-500/20 px-2 py-1 text-xs text-yellow-600 dark:text-yellow-400">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        <span>Building team...</span>
-      </div>
+      <button
+        type="button"
+        onClick={(e) => {
+          console.log('[TeamIndicator] Button clicked!');
+          e.preventDefault();
+          e.stopPropagation();
+          handleCreateTeam();
+        }}
+        disabled={isCreating || createTeamMutation.isLoading}
+        className={`relative z-20 flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+          isCreating || createTeamMutation.isLoading
+            ? 'bg-purple-500/20 text-purple-600 dark:text-purple-400'
+            : 'bg-gradient-to-r from-purple-500/20 to-blue-500/20 text-purple-600 hover:from-purple-500/30 hover:to-blue-500/30 hover:shadow-md dark:text-purple-400'
+        }`}
+        style={{ pointerEvents: 'auto' }}
+      >
+        {isCreating || createTeamMutation.isLoading ? (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span>Creating Team...</span>
+          </>
+        ) : (
+          <>
+            <Wand2 className="h-3.5 w-3.5" />
+            <span>Create Team</span>
+          </>
+        )}
+      </button>
     );
+  }
+
+  if (isLoading && !hasTeam) {
+    return null; // Don't show loading state, let message detection handle it
   }
 
   if (!hasTeam) return null;

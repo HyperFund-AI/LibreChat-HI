@@ -87,6 +87,36 @@ const isDrSterlingAgent = (agentId) => {
 };
 
 /**
+ * Checks if a string looks like a person's name (has at least first and last name)
+ * @param {string} str - String to check
+ * @returns {boolean}
+ */
+const looksLikePersonName = (str) => {
+  if (!str || typeof str !== 'string') return false;
+  
+  // Remove common prefixes like "Dr.", "Mr.", "Ms.", etc.
+  const cleanName = str.replace(/^(Dr\.|Mr\.|Ms\.|Mrs\.|Prof\.)\s*/i, '').trim();
+  
+  // Should have at least 2 words (first and last name)
+  const words = cleanName.split(/\s+/).filter(w => w.length > 1);
+  if (words.length < 2) return false;
+  
+  // Should not be generic section headers
+  const genericHeaders = [
+    'professional foundation', 'expertise architecture', 'operational parameters',
+    'excellence framework', 'quality assurance', 'project integration',
+    'team composition', 'behavioral science', 'domain specialist',
+    'collaboration protocol', 'success metrics', 'deliverables',
+  ];
+  if (genericHeaders.some(h => cleanName.toLowerCase().includes(h))) return false;
+  
+  // First word should start with uppercase (typical for names)
+  if (!/^[A-Z]/.test(words[0])) return false;
+  
+  return true;
+};
+
+/**
  * Parses a team specification from Dr. Sterling's markdown output
  * Extracts team members from the SUPERHUMAN SPECIFICATIONS section
  * @param {string} markdownOutput - The markdown document from Dr. Sterling
@@ -119,27 +149,90 @@ const parseTeamFromMarkdown = (markdownOutput) => {
       team.teamSize = parseInt(sizeMatch[1], 10);
     }
 
-    // Extract team members from the composition table
-    const tableMatch = markdownOutput.match(/\| Tier \| Role.*\|[\s\S]*?(?=\n---|\n##|$)/i);
+    // Extract team members from the composition table (supports both pipe and tab delimiters)
+    // Try pipe-delimited table first
+    let tableMatch = markdownOutput.match(/\| Tier \| Role.*\|[\s\S]*?(?=\n---|\n##|$)/i);
+    let delimiter = '|';
+    
+    // If no pipe table found, try tab-delimited table
+    if (!tableMatch) {
+      tableMatch = markdownOutput.match(/Tier\t+Role[\s\S]*?(?=\n\n|\n##|$)/i);
+      delimiter = '\t';
+    }
+    
+    // Also try to find table after "Team Composition" header
+    if (!tableMatch) {
+      tableMatch = markdownOutput.match(/Team Composition[^\n]*\n+([^\n]*Tier[^\n]*\n[\s\S]*?)(?=\n\n\n|\n##|$)/i);
+      delimiter = tableMatch && tableMatch[0].includes('|') ? '|' : '\t';
+    }
+    
     if (tableMatch) {
-      const tableLines = tableMatch[0].split('\n').filter(line => line.includes('|') && !line.includes('---'));
+      logger.debug(`[parseTeamFromMarkdown] Found table with delimiter: "${delimiter === '\t' ? 'TAB' : 'PIPE'}"`);
+      const tableContent = tableMatch[0];
+      const tableLines = tableContent.split('\n').filter(line => {
+        const trimmed = line.trim();
+        // Skip empty lines, separator lines (---), and header-only lines
+        return trimmed.length > 0 && 
+               !trimmed.match(/^[-|:\s]+$/) && // Skip separator lines like |---|---|
+               !trimmed.match(/^-+$/); // Skip --- lines
+      });
       
-      for (const line of tableLines.slice(2)) { // Skip header rows
-        const cells = line.split('|').map(cell => cell.trim()).filter(Boolean);
-        if (cells.length >= 4) {
-          team.members.push({
-            tier: cells[0],
-            role: cells[1],
-            name: cells[2],
-            expertise: cells[3],
-            behavioralLevel: cells[4] || 'NONE',
-          });
+      logger.debug(`[parseTeamFromMarkdown] Table lines: ${tableLines.length}`);
+      
+      // Find header row to determine column positions
+      const headerIndex = tableLines.findIndex(line => 
+        line.toLowerCase().includes('tier') && 
+        (line.toLowerCase().includes('role') || line.toLowerCase().includes('name'))
+      );
+      
+      // Process data rows (skip header)
+      const dataLines = headerIndex >= 0 ? tableLines.slice(headerIndex + 1) : tableLines.slice(1);
+      
+      for (const line of dataLines) {
+        // Split by delimiter (pipe or tab)
+        const cells = delimiter === '|' 
+          ? line.split('|').map(cell => cell.trim()).filter(Boolean)
+          : line.split(/\t+/).map(cell => cell.trim()).filter(Boolean);
+        
+        logger.debug(`[parseTeamFromMarkdown] Row cells: ${JSON.stringify(cells)}`);
+        
+        if (cells.length >= 3) {
+          // Try to identify name column (usually contains a person's name)
+          // Format could be: Tier | Role | Name | Expertise | Behavioral
+          // Or: Tier | Role | Name | Expertise
+          let tier = cells[0];
+          let role = cells[1];
+          let name = cells[2];
+          let expertise = cells[3] || '';
+          let behavioralLevel = cells[4] || 'NONE';
+          
+          // Skip if first cell doesn't look like a tier number
+          if (!/^\d+$/.test(tier.trim())) {
+            logger.debug(`[parseTeamFromMarkdown] Skipping row - tier "${tier}" is not a number`);
+            continue;
+          }
+          
+          // Only add if name looks like a person's name
+          if (looksLikePersonName(name)) {
+            team.members.push({
+              tier: tier,
+              role: role,
+              name: name,
+              expertise: expertise,
+              behavioralLevel: behavioralLevel,
+            });
+            logger.debug(`[parseTeamFromMarkdown] Added from table: ${name} (${role})`);
+          } else {
+            logger.debug(`[parseTeamFromMarkdown] Skipping - "${name}" doesn't look like a name`);
+          }
         }
       }
+    } else {
+      logger.debug('[parseTeamFromMarkdown] No table found in markdown');
     }
 
-    // Extract detailed specifications
-    const specSection = markdownOutput.match(/## SUPERHUMAN SPECIFICATIONS([\s\S]*?)(?=##\s*PROJECT INTEGRATION|$)/i);
+    // Extract detailed specifications - ONLY update existing members, don't add new ones
+    const specSection = markdownOutput.match(/## SUPERHUMAN SPECIFICATIONS([\s\S]*?)(?=##\s*PROJECT INTEGRATION|##\s*COLLABORATION|$)/i);
     if (specSection) {
       const specContent = specSection[1];
       
@@ -150,10 +243,26 @@ const parseTeamFromMarkdown = (markdownOutput) => {
         const nameMatch = block.match(/^([^\n]+)/);
         if (!nameMatch) continue;
         
-        const name = nameMatch[1].trim();
-        const existingMember = team.members.find(m => m.name === name);
+        // Extract just the name part (before any parenthetical role description)
+        let rawName = nameMatch[1].trim();
+        // Handle "Name (Role)" format
+        const nameOnly = rawName.replace(/\s*\([^)]+\)\s*$/, '').trim();
         
-        // Extract role
+        // Skip if it doesn't look like a person's name
+        if (!looksLikePersonName(nameOnly)) {
+          logger.debug(`[parseTeamFromMarkdown] Skipping non-person entry: "${rawName}"`);
+          continue;
+        }
+        
+        // Try to find existing member by name (fuzzy match)
+        const existingMember = team.members.find(m => 
+          m.name === nameOnly || 
+          m.name.toLowerCase() === nameOnly.toLowerCase() ||
+          m.name.includes(nameOnly) ||
+          nameOnly.includes(m.name)
+        );
+        
+        // Extract role from the block
         const roleMatch = block.match(/\*\*Role:\*\*\s*([^\n]+)/i);
         
         // Extract expertise
@@ -163,20 +272,27 @@ const parseTeamFromMarkdown = (markdownOutput) => {
         const instructions = block.substring(nameMatch[0].length).trim();
         
         if (existingMember) {
+          // Update existing member with detailed instructions
           existingMember.instructions = instructions;
           if (roleMatch) existingMember.detailedRole = roleMatch[1].trim();
           if (expertiseMatch) existingMember.expertise = expertiseMatch[1].trim();
-        } else {
+          logger.debug(`[parseTeamFromMarkdown] Updated member: ${existingMember.name}`);
+        } else if (team.members.length === 0) {
+          // Only add new members if we didn't get any from the table
           team.members.push({
-            name,
-            role: roleMatch ? roleMatch[1].trim() : name,
+            name: nameOnly,
+            role: roleMatch ? roleMatch[1].trim() : nameOnly,
             expertise: expertiseMatch ? expertiseMatch[1].trim() : '',
             instructions,
           });
+          logger.debug(`[parseTeamFromMarkdown] Added member (no table): ${nameOnly}`);
+        } else {
+          logger.debug(`[parseTeamFromMarkdown] Skipping unmatched entry: "${nameOnly}" (not in table)`);
         }
       }
     }
 
+    logger.info(`[parseTeamFromMarkdown] Parsed ${team.members.length} team members`);
     return team.members.length > 0 ? team : null;
   } catch (error) {
     logger.error('[parseTeamFromMarkdown] Error parsing team:', error);

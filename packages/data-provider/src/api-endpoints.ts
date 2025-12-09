@@ -388,3 +388,11 @@ export const getEffectivePermissions = (resourceType: ResourceType, resourceId: 
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>
   `${BASE_URL}/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;
+
+/* Teams */
+export const teams = () => `${BASE_URL}/api/teams`;
+export const teamDrSterling = () => `${teams()}/dr-sterling`;
+export const teamByConversation = (conversationId: string) =>
+  `${teams()}/${encodeURIComponent(conversationId)}`;
+export const teamParse = (conversationId: string) =>
+  `${teams()}/${encodeURIComponent(conversationId)}/parse`;
