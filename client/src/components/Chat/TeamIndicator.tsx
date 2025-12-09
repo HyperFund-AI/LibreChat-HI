@@ -1,8 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Users, Loader2, CheckCircle2, X, Bot, Briefcase, FileText, Sparkles, Wand2 } from 'lucide-react';
+import { Users, Loader2, CheckCircle2, X, Bot, Briefcase, FileText, Sparkles, Wand2, BookOpen, Trash2, Eye, Calendar } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, Constants, dataService } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
+
+interface KnowledgeDocument {
+  documentId: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  tags: string[];
+}
 
 interface TeamAgent {
   agentId: string;
@@ -110,6 +118,8 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
   const [previousTeamCount, setPreviousTeamCount] = useState(0);
   const [selectedAgent, setSelectedAgent] = useState<TeamAgent | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [activeTab, setActiveTab] = useState<'team' | 'knowledge'>('team');
+  const [selectedDocument, setSelectedDocument] = useState<KnowledgeDocument | null>(null);
   const queryClient = useQueryClient();
   
   const conversationId = conversation?.conversationId;
@@ -142,6 +152,30 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
 
   const teamAgents = ((convoData as TConversation & { teamAgents?: TeamAgent[] })?.teamAgents || []) as TeamAgent[];
   const hasTeam = teamAgents.length > 0;
+
+  // Query for knowledge base documents
+  const { data: knowledgeData, refetch: refetchKnowledge } = useQuery(
+    ['teamKnowledge', conversationId],
+    () => dataService.getTeamKnowledge(conversationId!),
+    {
+      enabled: !isNewConvo && !!conversationId && hasTeam,
+      refetchOnWindowFocus: false,
+    },
+  );
+
+  const knowledgeDocs = (knowledgeData?.documents || []) as KnowledgeDocument[];
+
+  // Mutation to delete a knowledge document
+  const deleteKnowledgeMutation = useMutation({
+    mutationFn: async (documentId: string) => {
+      return dataService.deleteKnowledgeDocument(conversationId!, documentId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(['teamKnowledge', conversationId]);
+      refetchKnowledge();
+      setSelectedDocument(null);
+    },
+  });
 
   // Find messages that contain team specifications
   const teamSpecMessage = useMemo(() => {
@@ -309,6 +343,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                   onClick={() => {
                     setIsModalOpen(false);
                     setSelectedAgent(null);
+                    setSelectedDocument(null);
                   }}
                   className="rounded-full p-2 text-white/80 transition-colors hover:bg-white/20 hover:text-white"
                 >
@@ -317,115 +352,275 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
               </div>
             </div>
 
+            {/* Tabs */}
+            <div className="flex border-b border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => {
+                  setActiveTab('team');
+                  setSelectedDocument(null);
+                }}
+                className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors ${
+                  activeTab === 'team'
+                    ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                }`}
+              >
+                <Users className="h-4 w-4" />
+                Team Members
+                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs dark:bg-blue-900/30">
+                  {teamAgents.length}
+                </span>
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab('knowledge');
+                  setSelectedAgent(null);
+                }}
+                className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors ${
+                  activeTab === 'knowledge'
+                    ? 'border-b-2 border-purple-500 text-purple-600 dark:text-purple-400'
+                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                }`}
+              >
+                <BookOpen className="h-4 w-4" />
+                Knowledge Base
+                {knowledgeDocs.length > 0 && (
+                  <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs dark:bg-purple-900/30">
+                    {knowledgeDocs.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
             {/* Content */}
             <div className="max-h-[60vh] overflow-y-auto p-6">
-              {selectedAgent ? (
-                /* Agent Detail View */
-                <div className="space-y-4">
-                  <button
-                    onClick={() => setSelectedAgent(null)}
-                    className="mb-2 flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
-                  >
-                    ← Back to team
-                  </button>
-                  
-                  <div className="flex items-start gap-4">
-                    <div className={`flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${getRoleColor(selectedAgent.role)} text-3xl shadow-lg`}>
-                      {getRoleIcon(selectedAgent.role)}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
-                          {selectedAgent.name}
-                        </h3>
-                        {selectedAgent.tier && getTierBadge(selectedAgent.tier) && (
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${getTierBadge(selectedAgent.tier)?.color}`}>
-                            {getTierBadge(selectedAgent.tier)?.label}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-lg text-gray-500 dark:text-gray-400">{selectedAgent.role}</p>
-                      {selectedAgent.behavioralLevel && selectedAgent.behavioralLevel !== 'NONE' && (
-                        <p className="mt-1 text-sm text-purple-600 dark:text-purple-400">
-                          🧠 Behavioral Science: {selectedAgent.behavioralLevel}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {selectedAgent.responsibilities && (
-                    <div className="mt-6 rounded-xl bg-blue-50 p-4 dark:bg-blue-900/20">
-                      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-blue-700 dark:text-blue-300">
-                        <Briefcase className="h-4 w-4" />
-                        Expertise & Responsibilities
-                      </div>
-                      <p className="text-sm leading-relaxed text-blue-800 dark:text-blue-200">
-                        {selectedAgent.responsibilities}
-                      </p>
-                    </div>
-                  )}
-
-                  {selectedAgent.instructions && (
-                    <div className="rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
-                      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                        <FileText className="h-4 w-4" />
-                        System Instructions
-                      </div>
-                      <div className="max-h-64 overflow-y-auto">
-                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-600 dark:text-gray-400">
-                          {selectedAgent.instructions}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex flex-wrap gap-3 pt-2 text-xs text-gray-500 dark:text-gray-400">
-                    {selectedAgent.provider && (
-                      <span className="flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 dark:bg-gray-800">
-                        <Bot className="h-3 w-3" />
-                        {selectedAgent.provider}
-                      </span>
-                    )}
-                    {selectedAgent.model && (
-                      <span className="rounded-full bg-gray-100 px-3 py-1 dark:bg-gray-800">
-                        {selectedAgent.model}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                /* Team Grid View */
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {teamAgents.map((agent, index) => (
+              {activeTab === 'team' ? (
+                /* TEAM TAB */
+                selectedAgent ? (
+                  /* Agent Detail View */
+                  <div className="space-y-4">
                     <button
-                      key={agent.agentId || index}
-                      onClick={() => setSelectedAgent(agent)}
-                      className="group flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 text-left transition-all hover:border-blue-300 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:hover:border-blue-600"
+                      onClick={() => setSelectedAgent(null)}
+                      className="mb-2 flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
                     >
-                      <div className={`flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${getRoleColor(agent.role)} text-xl shadow-md transition-transform group-hover:scale-110`}>
-                        {getRoleIcon(agent.role)}
+                      ← Back to team
+                    </button>
+                    
+                    <div className="flex items-start gap-4">
+                      <div className={`flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${getRoleColor(selectedAgent.role)} text-3xl shadow-lg`}>
+                        {getRoleIcon(selectedAgent.role)}
                       </div>
-                      <div className="min-w-0 flex-1">
+                      <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <h3 className="truncate font-semibold text-gray-900 dark:text-white">
-                            {agent.name}
+                          <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
+                            {selectedAgent.name}
                           </h3>
-                          {agent.tier && getTierBadge(agent.tier) && (
-                            <span className={`flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${getTierBadge(agent.tier)?.color}`}>
-                              {getTierBadge(agent.tier)?.label}
+                          {selectedAgent.tier && getTierBadge(selectedAgent.tier) && (
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${getTierBadge(selectedAgent.tier)?.color}`}>
+                              {getTierBadge(selectedAgent.tier)?.label}
                             </span>
                           )}
                         </div>
-                        <p className="truncate text-sm text-gray-500 dark:text-gray-400">
-                          {agent.role}
-                        </p>
-                        <p className="mt-2 text-xs text-blue-600 opacity-0 transition-opacity group-hover:opacity-100 dark:text-blue-400">
-                          View full profile →
+                        <p className="text-lg text-gray-500 dark:text-gray-400">{selectedAgent.role}</p>
+                        {selectedAgent.behavioralLevel && selectedAgent.behavioralLevel !== 'NONE' && (
+                          <p className="mt-1 text-sm text-purple-600 dark:text-purple-400">
+                            🧠 Behavioral Science: {selectedAgent.behavioralLevel}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {selectedAgent.responsibilities && (
+                      <div className="mt-6 rounded-xl bg-blue-50 p-4 dark:bg-blue-900/20">
+                        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-blue-700 dark:text-blue-300">
+                          <Briefcase className="h-4 w-4" />
+                          Expertise & Responsibilities
+                        </div>
+                        <p className="text-sm leading-relaxed text-blue-800 dark:text-blue-200">
+                          {selectedAgent.responsibilities}
                         </p>
                       </div>
+                    )}
+
+                    {selectedAgent.instructions && (
+                      <div className="rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
+                        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                          <FileText className="h-4 w-4" />
+                          System Instructions
+                        </div>
+                        <div className="max-h-64 overflow-y-auto">
+                          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+                            {selectedAgent.instructions}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-3 pt-2 text-xs text-gray-500 dark:text-gray-400">
+                      {selectedAgent.provider && (
+                        <span className="flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 dark:bg-gray-800">
+                          <Bot className="h-3 w-3" />
+                          {selectedAgent.provider}
+                        </span>
+                      )}
+                      {selectedAgent.model && (
+                        <span className="rounded-full bg-gray-100 px-3 py-1 dark:bg-gray-800">
+                          {selectedAgent.model}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  /* Team Grid View */
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {teamAgents.map((agent, index) => (
+                      <button
+                        key={agent.agentId || index}
+                        onClick={() => setSelectedAgent(agent)}
+                        className="group flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 text-left transition-all hover:border-blue-300 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:hover:border-blue-600"
+                      >
+                        <div className={`flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${getRoleColor(agent.role)} text-xl shadow-md transition-transform group-hover:scale-110`}>
+                          {getRoleIcon(agent.role)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="truncate font-semibold text-gray-900 dark:text-white">
+                              {agent.name}
+                            </h3>
+                            {agent.tier && getTierBadge(agent.tier) && (
+                              <span className={`flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${getTierBadge(agent.tier)?.color}`}>
+                                {getTierBadge(agent.tier)?.label}
+                              </span>
+                            )}
+                          </div>
+                          <p className="truncate text-sm text-gray-500 dark:text-gray-400">
+                            {agent.role}
+                          </p>
+                          <p className="mt-2 text-xs text-blue-600 opacity-0 transition-opacity group-hover:opacity-100 dark:text-blue-400">
+                            View full profile →
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )
+              ) : (
+                /* KNOWLEDGE BASE TAB */
+                selectedDocument ? (
+                  /* Document Detail View */
+                  <div className="space-y-4">
+                    <button
+                      onClick={() => setSelectedDocument(null)}
+                      className="mb-2 flex items-center gap-1 text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400"
+                    >
+                      ← Back to knowledge base
                     </button>
-                  ))}
-                </div>
+                    
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 text-xl shadow-lg">
+                          📄
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                            {selectedDocument.title}
+                          </h3>
+                          <p className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
+                            <Calendar className="h-3 w-3" />
+                            {new Date(selectedDocument.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          if (confirm('Are you sure you want to delete this document?')) {
+                            deleteKnowledgeMutation.mutate(selectedDocument.documentId);
+                          }
+                        }}
+                        disabled={deleteKnowledgeMutation.isLoading}
+                        className="rounded-lg bg-red-100 p-2 text-red-600 transition-colors hover:bg-red-200 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40"
+                        title="Delete document"
+                      >
+                        {deleteKnowledgeMutation.isLoading ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+
+                    {selectedDocument.tags && selectedDocument.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {selectedDocument.tags.map((tag, i) => (
+                          <span
+                            key={i}
+                            className="rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
+                      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                        <FileText className="h-4 w-4" />
+                        Document Content
+                      </div>
+                      <div className="max-h-96 overflow-y-auto">
+                        <pre className="whitespace-pre-wrap text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+                          {selectedDocument.content}
+                        </pre>
+                      </div>
+                    </div>
+                  </div>
+                ) : knowledgeDocs.length === 0 ? (
+                  /* Empty State */
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-purple-100 dark:bg-purple-900/30">
+                      <BookOpen className="h-8 w-8 text-purple-500" />
+                    </div>
+                    <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">
+                      No Documents Yet
+                    </h3>
+                    <p className="max-w-sm text-sm text-gray-500 dark:text-gray-400">
+                      When the team generates documents, you can save them to the knowledge base
+                      for future reference. Click "Save to KB" on any team output.
+                    </p>
+                  </div>
+                ) : (
+                  /* Knowledge Documents List */
+                  <div className="space-y-3">
+                    {knowledgeDocs.map((doc, index) => (
+                      <button
+                        key={doc.documentId || index}
+                        onClick={() => setSelectedDocument(doc)}
+                        className="group flex w-full items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 text-left transition-all hover:border-purple-300 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:hover:border-purple-600"
+                      >
+                        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 text-lg shadow-md">
+                          📄
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <h3 className="truncate font-semibold text-gray-900 dark:text-white">
+                              {doc.title}
+                            </h3>
+                            <span className="flex-shrink-0 text-xs text-gray-400">
+                              {new Date(doc.createdAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <p className="mt-1 line-clamp-2 text-sm text-gray-500 dark:text-gray-400">
+                            {doc.content.substring(0, 150)}...
+                          </p>
+                          <p className="mt-2 flex items-center gap-1 text-xs text-purple-600 opacity-0 transition-opacity group-hover:opacity-100 dark:text-purple-400">
+                            <Eye className="h-3 w-3" />
+                            View document →
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )
               )}
             </div>
 
