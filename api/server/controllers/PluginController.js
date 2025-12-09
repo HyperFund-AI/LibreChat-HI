@@ -99,18 +99,27 @@ const getAvailableTools = async (req, res) => {
     /** Filter plugins based on availability */
     const toolsOutput = [];
     for (const plugin of authenticatedPlugins) {
-      const isToolDefined = toolDefinitions?.[plugin.pluginKey] !== undefined;
-      const isToolkit =
-        plugin.toolkit === true &&
-        Object.keys(toolDefinitions ?? {}).some(
-          (key) => getToolkitKey({ toolkits, toolName: key }) === plugin.pluginKey,
-        );
+      try {
+        const isToolDefined = toolDefinitions?.[plugin.pluginKey] !== undefined;
+        const isToolkit =
+          plugin.toolkit === true &&
+          Object.keys(toolDefinitions ?? {}).some(
+            (key) => getToolkitKey({ toolkits, toolName: key }) === plugin.pluginKey,
+          );
 
-      if (!isToolDefined && !isToolkit) {
+        if (!isToolDefined && !isToolkit) {
+          continue;
+        }
+
+        toolsOutput.push(plugin);
+      } catch (error) {
+        logger.error(
+          `[getAvailableTools] Error processing plugin ${plugin.pluginKey}:`,
+          error,
+        );
+        // Continue to next plugin instead of failing entirely
         continue;
       }
-
-      toolsOutput.push(plugin);
     }
 
     const finalTools = filterUniquePlugins(toolsOutput);
