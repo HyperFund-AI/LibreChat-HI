@@ -81,15 +81,21 @@ const getConvoFiles = async (conversationId) => {
  * @param {Array} teamAgents - Array of team agent configurations
  * @param {string} hostAgentId - The coordinator agent ID
  * @param {string} teamFileId - The file ID that triggered team creation
+ * @param {string} teamObjective - The main objective for the team (optional)
  * @returns {Promise<Object>} Updated conversation
  */
-const saveTeamAgents = async (conversationId, teamAgents, hostAgentId, teamFileId) => {
+const saveTeamAgents = async (conversationId, teamAgents, hostAgentId, teamFileId, teamObjective = null) => {
   try {
     const update = {
       teamAgents,
       hostAgentId,
       teamFileId,
     };
+    
+    // Only add teamObjective if provided
+    if (teamObjective) {
+      update.teamObjective = teamObjective;
+    }
 
     const conversation = await Conversation.findOneAndUpdate(
       { conversationId },
@@ -101,7 +107,7 @@ const saveTeamAgents = async (conversationId, teamAgents, hostAgentId, teamFileI
       throw new Error('Conversation not found');
     }
 
-    logger.debug(`[saveTeamAgents] Saved ${teamAgents.length} team agents to conversation ${conversationId}`);
+    logger.debug(`[saveTeamAgents] Saved ${teamAgents.length} team agents to conversation ${conversationId}${teamObjective ? ' with objective' : ''}`);
     return conversation;
   } catch (error) {
     logger.error('[saveTeamAgents] Error saving team agents:', error);
@@ -125,6 +131,34 @@ const getTeamAgents = async (conversationId) => {
 };
 
 /**
+ * Retrieves full team info including agents and objective
+ * @param {string} conversationId - The conversation ID
+ * @returns {Promise<Object|null>} Team info or null if not found
+ */
+const getTeamInfo = async (conversationId) => {
+  try {
+    const conversation = await Conversation.findOne(
+      { conversationId }, 
+      'teamAgents hostAgentId teamFileId teamObjective'
+    ).lean();
+    
+    if (!conversation || !conversation.teamAgents) {
+      return null;
+    }
+    
+    return {
+      teamAgents: conversation.teamAgents,
+      hostAgentId: conversation.hostAgentId,
+      teamFileId: conversation.teamFileId,
+      teamObjective: conversation.teamObjective || null,
+    };
+  } catch (error) {
+    logger.error('[getTeamInfo] Error getting team info:', error);
+    return null;
+  }
+};
+
+/**
  * Clears team agents from a conversation
  * @param {string} conversationId - The conversation ID
  * @returns {Promise<Object>} Updated conversation
@@ -138,6 +172,7 @@ const clearTeamAgents = async (conversationId) => {
           teamAgents: '',
           hostAgentId: '',
           teamFileId: '',
+          teamObjective: '',
         },
       },
       { new: true },
@@ -157,6 +192,7 @@ module.exports = {
   deleteNullOrEmptyConversations,
   saveTeamAgents,
   getTeamAgents,
+  getTeamInfo,
   clearTeamAgents,
   /**
    * Saves a conversation to the database.

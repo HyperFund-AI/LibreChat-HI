@@ -794,6 +794,7 @@ export const tConversationSchema = z.object({
     .optional(),
   hostAgentId: z.string().nullable().optional(),
   teamFileId: z.string().nullable().optional(),
+  teamObjective: z.string().nullable().optional(),
 });
 
 export const tPresetSchema = tConversationSchema

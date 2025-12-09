@@ -9,7 +9,7 @@ const {
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const { saveMessage } = require('~/models');
 const { DR_STERLING_AGENT_ID, orchestrateTeamResponse } = require('~/server/services/Teams');
-const { getTeamAgents } = require('~/models/Conversation');
+const { getTeamAgents, getTeamInfo } = require('~/models/Conversation');
 
 function createCloseHandler(abortController) {
   return function (manual) {
@@ -32,13 +32,20 @@ function createCloseHandler(abortController) {
 /**
  * Handles team orchestration when a conversation has team agents
  * Shows collaboration progress ("thinking") and streams final response
+ * @param {Object} params - Parameters
+ * @param {string} params.text - The user's message or objective to work on
+ * @param {string} params.conversationId - The conversation ID
+ * @param {string} params.parentMessageId - Parent message ID
+ * @param {Array} params.teamAgents - Array of team agents
+ * @param {string} params.userId - User ID
+ * @param {string} params.teamObjective - The stored team objective (optional)
  */
-async function handleTeamOrchestration(req, res, { text, conversationId, parentMessageId, teamAgents, userId }) {
+async function handleTeamOrchestration(req, res, { text, conversationId, parentMessageId, teamAgents, userId, teamObjective }) {
   const { v4: uuidv4 } = require('uuid');
   const { getMessages, saveConvo, getConvo } = require('~/models');
   
   try {
-    logger.info(`[handleTeamOrchestration] Starting with ${teamAgents.length} team agents`);
+    logger.info(`[handleTeamOrchestration] Starting with ${teamAgents.length} team agents${teamObjective ? ', objective provided' : ''}`);
     
     const userMessageId = uuidv4();
     const responseMessageId = uuidv4();
@@ -247,17 +254,25 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
   // Skip team mode if Dr. Sterling was explicitly activated
   if (!drSterlingActivated && conversationId && conversationId !== Constants.NEW_CONVO) {
     try {
-      const teamAgents = await getTeamAgents(conversationId);
-      if (teamAgents && teamAgents.length > 0) {
-        logger.info(`[AgentController] 🤝 Team mode detected with ${teamAgents.length} agents, routing to team orchestration`);
+      const teamInfo = await getTeamInfo(conversationId);
+      if (teamInfo && teamInfo.teamAgents && teamInfo.teamAgents.length > 0) {
+        const { teamAgents, teamObjective } = teamInfo;
+        logger.info(`[AgentController] 🤝 Team mode detected with ${teamAgents.length} agents${teamObjective ? ', has stored objective' : ''}`);
         
-        // Route to team orchestration
+        // Route to team orchestration with stored objective if user's message is short/generic
+        // Otherwise use user's current message as the objective
+        const currentObjective = text.length < 50 && teamObjective ? teamObjective : text;
+        if (teamObjective && currentObjective === teamObjective) {
+          logger.info(`[AgentController] 📋 Using stored team objective: ${teamObjective.substring(0, 100)}...`);
+        }
+        
         return await handleTeamOrchestration(req, res, {
-          text,
+          text: currentObjective,
           conversationId,
           parentMessageId,
           teamAgents,
           userId,
+          teamObjective, // Pass stored objective for reference
         });
       }
     } catch (teamCheckError) {

@@ -7,7 +7,7 @@ const {
   convertParsedTeamToAgents,
   DR_STERLING_AGENT_ID,
 } = require('~/server/services/Teams');
-const { saveTeamAgents, getTeamAgents, clearTeamAgents } = require('~/models/Conversation');
+const { saveTeamAgents, getTeamAgents, getTeamInfo, clearTeamAgents } = require('~/models/Conversation');
 const { teamChatController } = require('~/server/controllers/teams');
 
 const router = express.Router();
@@ -39,18 +39,20 @@ router.get('/dr-sterling', async (req, res) => {
 
 /**
  * GET /api/teams/:conversationId
- * Get team agents for a conversation
+ * Get team info including agents and objective for a conversation
  */
 router.get('/:conversationId', async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const teamAgents = await getTeamAgents(conversationId);
+    const teamInfo = await getTeamInfo(conversationId);
     
     res.json({
       success: true,
       conversationId,
-      teamAgents: teamAgents || [],
-      count: teamAgents?.length || 0,
+      teamAgents: teamInfo?.teamAgents || [],
+      teamObjective: teamInfo?.teamObjective || null,
+      hostAgentId: teamInfo?.hostAgentId || null,
+      count: teamInfo?.teamAgents?.length || 0,
     });
   } catch (error) {
     logger.error('[GET /api/teams/:conversationId] Error:', error);
@@ -61,11 +63,12 @@ router.get('/:conversationId', async (req, res) => {
 /**
  * POST /api/teams/:conversationId/parse
  * Parse team from Dr. Sterling's markdown output and save to conversation
+ * Also saves the team objective for later execution
  */
 router.post('/:conversationId/parse', async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const { markdownContent } = req.body;
+    const { markdownContent, objective } = req.body;
 
     if (!markdownContent) {
       return res.status(400).json({ 
@@ -84,19 +87,41 @@ router.post('/:conversationId/parse', async (req, res) => {
       });
     }
 
+    // Try to extract objective from markdown if not explicitly provided
+    let teamObjective = objective || null;
+    
+    if (!teamObjective) {
+      // Look for objective in markdown (common patterns from Dr. Sterling)
+      const objectivePatterns = [
+        /\*\*Project Objective:\*\*\s*([^\n]+)/i,
+        /\*\*Objective:\*\*\s*([^\n]+)/i,
+        /\*\*Primary Objective:\*\*\s*([^\n]+)/i,
+        /## PROJECT OVERVIEW[\s\S]*?(?:objective|goal|mission)[:\s]+([^\n]+)/i,
+      ];
+      
+      for (const pattern of objectivePatterns) {
+        const match = markdownContent.match(pattern);
+        if (match) {
+          teamObjective = match[1].trim();
+          break;
+        }
+      }
+    }
+
     // Convert to agent format
     const teamAgents = convertParsedTeamToAgents(parsedTeam, conversationId);
 
-    // Save to conversation
-    await saveTeamAgents(conversationId, teamAgents, DR_STERLING_AGENT_ID, null);
+    // Save to conversation with objective
+    await saveTeamAgents(conversationId, teamAgents, DR_STERLING_AGENT_ID, null, teamObjective);
 
-    logger.info(`[POST /api/teams/:conversationId/parse] Created ${teamAgents.length} team agents from Dr. Sterling output`);
+    logger.info(`[POST /api/teams/:conversationId/parse] Created ${teamAgents.length} team agents${teamObjective ? ' with objective' : ''}`);
 
     res.json({
       success: true,
       projectName: parsedTeam.projectName,
       complexity: parsedTeam.complexity,
       teamSize: parsedTeam.teamSize,
+      teamObjective,
       teamAgents,
     });
   } catch (error) {
