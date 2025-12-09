@@ -1038,3 +1038,66 @@ export function parseTeamFromMarkdown(
 export function clearTeamAgents(conversationId: string): Promise<{ success: boolean; message: string }> {
   return request.delete(endpoints.teamByConversation(conversationId));
 }
+
+// Team Knowledge Base methods
+export interface KnowledgeDocument {
+  documentId: string;
+  conversationId: string;
+  title: string;
+  content: string;
+  contentType: string;
+  messageId: string;
+  createdBy: string;
+  tags: string[];
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeListResponse {
+  success: boolean;
+  conversationId: string;
+  documents: KnowledgeDocument[];
+  count: number;
+}
+
+export interface KnowledgeSaveResponse {
+  success: boolean;
+  document: {
+    documentId: string;
+    title: string;
+    createdAt: string;
+    tags: string[];
+  };
+}
+
+export function getTeamKnowledge(conversationId: string): Promise<KnowledgeListResponse> {
+  return request.get(endpoints.teamKnowledge(conversationId));
+}
+
+export function saveToTeamKnowledge(
+  conversationId: string,
+  data: { title: string; content: string; messageId?: string; tags?: string[] },
+): Promise<KnowledgeSaveResponse> {
+  return request.post(endpoints.teamKnowledge(conversationId), data);
+}
+
+export function getKnowledgeDocument(
+  conversationId: string,
+  documentId: string,
+): Promise<{ success: boolean; document: KnowledgeDocument }> {
+  return request.get(endpoints.teamKnowledgeDocument(conversationId, documentId));
+}
+
+export function deleteKnowledgeDocument(
+  conversationId: string,
+  documentId: string,
+): Promise<{ success: boolean; message: string }> {
+  return request.delete(endpoints.teamKnowledgeDocument(conversationId, documentId));
+}
+
+export function clearTeamKnowledge(
+  conversationId: string,
+): Promise<{ success: boolean; deletedCount: number; message: string }> {
+  return request.delete(endpoints.teamKnowledge(conversationId));
+}

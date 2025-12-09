@@ -43,6 +43,7 @@ function createCloseHandler(abortController) {
 async function handleTeamOrchestration(req, res, { text, conversationId, parentMessageId, teamAgents, userId, teamObjective }) {
   const { v4: uuidv4 } = require('uuid');
   const { getMessages, saveConvo, getConvo } = require('~/models');
+  const { getKnowledgeContext } = require('~/models/TeamKnowledge');
   
   try {
     logger.info(`[handleTeamOrchestration] Starting with ${teamAgents.length} team agents${teamObjective ? ', objective provided' : ''}`);
@@ -52,6 +53,12 @@ async function handleTeamOrchestration(req, res, { text, conversationId, parentM
     
     const conversationHistory = await getMessages({ conversationId }, '-createdAt') || [];
     const conversation = await getConvo(userId, conversationId);
+    
+    // Load team knowledge base for context
+    const knowledgeContext = await getKnowledgeContext(conversationId);
+    if (knowledgeContext) {
+      logger.info(`[handleTeamOrchestration] Loaded knowledge base context (${knowledgeContext.length} chars)`);
+    }
     
     // Create and save user message
     const userMessage = {
@@ -91,6 +98,7 @@ async function handleTeamOrchestration(req, res, { text, conversationId, parentM
       teamAgents,
       conversationHistory,
       fileContext: '',
+      knowledgeContext,
       config: req.config,
       
       // Show "thinking" process - team collaboration

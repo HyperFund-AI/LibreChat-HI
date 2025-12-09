@@ -224,6 +224,7 @@ const orchestrateTeamResponse = async ({
   teamAgents,
   conversationHistory,
   fileContext,
+  knowledgeContext,
   config,
   onAgentStart,
   onAgentComplete,
@@ -238,6 +239,13 @@ const orchestrateTeamResponse = async ({
       throw new Error('Anthropic API key not configured');
     }
 
+    // Include knowledge context in the message if available
+    let enrichedMessage = userMessage;
+    if (knowledgeContext && knowledgeContext.trim()) {
+      logger.info('[orchestrateTeamResponse] Injecting team knowledge context');
+      enrichedMessage = `${userMessage}\n\n${knowledgeContext}`;
+    }
+
     const lead = teamAgents.find(a => parseInt(a.tier) === 3) || teamAgents[0];
     const specialists = teamAgents.filter(a => parseInt(a.tier) !== 3 && parseInt(a.tier) !== 5);
     
@@ -248,7 +256,7 @@ const orchestrateTeamResponse = async ({
     
     const workPlan = await executeLeadAnalysis({
       lead,
-      userMessage,
+      userMessage: enrichedMessage,
       apiKey,
       teamAgents,
       onThinking,

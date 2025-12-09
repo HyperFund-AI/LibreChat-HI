@@ -9,6 +9,13 @@ const {
 } = require('~/server/services/Teams');
 const { saveTeamAgents, getTeamAgents, getTeamInfo, clearTeamAgents } = require('~/models/Conversation');
 const { teamChatController } = require('~/server/controllers/teams');
+const {
+  saveToKnowledge,
+  getKnowledge,
+  getKnowledgeDocument,
+  deleteKnowledgeDocument,
+  clearKnowledge,
+} = require('~/models/TeamKnowledge');
 
 const router = express.Router();
 
@@ -163,6 +170,144 @@ router.post('/:conversationId/chat', setHeaders, async (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({ success: false, error: error.message });
     }
+  }
+});
+
+// ============ KNOWLEDGE BASE ENDPOINTS ============
+
+/**
+ * GET /api/teams/:conversationId/knowledge
+ * Get all knowledge documents for a team conversation
+ */
+router.get('/:conversationId/knowledge', async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const documents = await getKnowledge(conversationId);
+    
+    res.json({
+      success: true,
+      conversationId,
+      documents,
+      count: documents.length,
+    });
+  } catch (error) {
+    logger.error('[GET /api/teams/:conversationId/knowledge] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/teams/:conversationId/knowledge
+ * Save a document to the team knowledge base
+ */
+router.post('/:conversationId/knowledge', async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const { title, content, messageId, tags = [] } = req.body;
+
+    if (!title || !content) {
+      return res.status(400).json({
+        success: false,
+        error: 'title and content are required',
+      });
+    }
+
+    // Generate unique document ID
+    const { v4: uuidv4 } = require('uuid');
+    const documentId = `kb_${conversationId}_${uuidv4()}`;
+
+    const document = await saveToKnowledge({
+      conversationId,
+      documentId,
+      title,
+      content,
+      messageId: messageId || '',
+      createdBy: req.user.id,
+      tags,
+      metadata: {
+        savedAt: new Date().toISOString(),
+      },
+    });
+
+    logger.info(`[POST /api/teams/:conversationId/knowledge] Saved "${title}" to knowledge base`);
+
+    res.json({
+      success: true,
+      document: {
+        documentId: document.documentId,
+        title: document.title,
+        createdAt: document.createdAt,
+        tags: document.tags,
+      },
+    });
+  } catch (error) {
+    logger.error('[POST /api/teams/:conversationId/knowledge] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/teams/:conversationId/knowledge/:documentId
+ * Get a specific knowledge document
+ */
+router.get('/:conversationId/knowledge/:documentId', async (req, res) => {
+  try {
+    const { documentId } = req.params;
+    const document = await getKnowledgeDocument(documentId);
+    
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        error: 'Document not found',
+      });
+    }
+
+    res.json({
+      success: true,
+      document,
+    });
+  } catch (error) {
+    logger.error('[GET /api/teams/:conversationId/knowledge/:documentId] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * DELETE /api/teams/:conversationId/knowledge/:documentId
+ * Delete a specific knowledge document
+ */
+router.delete('/:conversationId/knowledge/:documentId', async (req, res) => {
+  try {
+    const { documentId } = req.params;
+    const success = await deleteKnowledgeDocument(documentId);
+    
+    res.json({
+      success,
+      message: success ? 'Document deleted' : 'Failed to delete document',
+    });
+  } catch (error) {
+    logger.error('[DELETE /api/teams/:conversationId/knowledge/:documentId] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * DELETE /api/teams/:conversationId/knowledge
+ * Clear all knowledge documents for a conversation
+ */
+router.delete('/:conversationId/knowledge', async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const deletedCount = await clearKnowledge(conversationId);
+    
+    res.json({
+      success: true,
+      deletedCount,
+      message: `Cleared ${deletedCount} documents from knowledge base`,
+    });
+  } catch (error) {
+    logger.error('[DELETE /api/teams/:conversationId/knowledge] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

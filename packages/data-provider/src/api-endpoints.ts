@@ -398,3 +398,9 @@ export const teamParse = (conversationId: string) =>
   `${teams()}/${encodeURIComponent(conversationId)}/parse`;
 export const teamChat = (conversationId: string) =>
   `${teams()}/${encodeURIComponent(conversationId)}/chat`;
+
+// Team Knowledge Base endpoints
+export const teamKnowledge = (conversationId: string) =>
+  `${teams()}/${encodeURIComponent(conversationId)}/knowledge`;
+export const teamKnowledgeDocument = (conversationId: string, documentId: string) =>
+  `${teams()}/${encodeURIComponent(conversationId)}/knowledge/${encodeURIComponent(documentId)}`;

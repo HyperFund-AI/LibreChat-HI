@@ -1,0 +1,204 @@
+const { logger } = require('@librechat/data-schemas');
+const mongoose = require('mongoose');
+
+/**
+ * Schema for team knowledge base documents
+ * Stores approved documents that teams have generated for future reference
+ */
+const teamKnowledgeSchema = new mongoose.Schema(
+  {
+    conversationId: {
+      type: String,
+      required: true,
+      index: true,
+    },
+    documentId: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    title: {
+      type: String,
+      required: true,
+    },
+    content: {
+      type: String,
+      required: true,
+    },
+    contentType: {
+      type: String,
+      default: 'markdown',
+      enum: ['markdown', 'text', 'json'],
+    },
+    messageId: {
+      type: String,
+      required: true,
+    },
+    createdBy: {
+      type: String,
+      required: true,
+    },
+    tags: {
+      type: [String],
+      default: [],
+    },
+    metadata: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+  },
+  {
+    timestamps: true,
+  },
+);
+
+// Compound index for efficient queries
+teamKnowledgeSchema.index({ conversationId: 1, createdAt: -1 });
+
+const TeamKnowledge = mongoose.model('TeamKnowledge', teamKnowledgeSchema);
+
+/**
+ * Saves a document to the team knowledge base
+ * @param {Object} params - Document parameters
+ * @param {string} params.conversationId - The conversation ID
+ * @param {string} params.documentId - Unique document ID
+ * @param {string} params.title - Document title
+ * @param {string} params.content - Document content (markdown)
+ * @param {string} params.messageId - Source message ID
+ * @param {string} params.createdBy - User ID who approved
+ * @param {string[]} params.tags - Optional tags
+ * @param {Object} params.metadata - Optional metadata
+ * @returns {Promise<Object>} Created document
+ */
+const saveToKnowledge = async ({
+  conversationId,
+  documentId,
+  title,
+  content,
+  messageId,
+  createdBy,
+  tags = [],
+  metadata = {},
+}) => {
+  try {
+    const doc = await TeamKnowledge.findOneAndUpdate(
+      { documentId },
+      {
+        conversationId,
+        documentId,
+        title,
+        content,
+        contentType: 'markdown',
+        messageId,
+        createdBy,
+        tags,
+        metadata,
+      },
+      { upsert: true, new: true },
+    );
+
+    logger.info(`[TeamKnowledge] Saved document "${title}" to knowledge base for conversation ${conversationId}`);
+    return doc;
+  } catch (error) {
+    logger.error('[TeamKnowledge] Error saving to knowledge base:', error);
+    throw error;
+  }
+};
+
+/**
+ * Gets all knowledge documents for a conversation
+ * @param {string} conversationId - The conversation ID
+ * @returns {Promise<Array>} Array of knowledge documents
+ */
+const getKnowledge = async (conversationId) => {
+  try {
+    const docs = await TeamKnowledge.find({ conversationId })
+      .sort({ createdAt: -1 })
+      .lean();
+    return docs;
+  } catch (error) {
+    logger.error('[TeamKnowledge] Error getting knowledge:', error);
+    return [];
+  }
+};
+
+/**
+ * Gets a specific knowledge document
+ * @param {string} documentId - The document ID
+ * @returns {Promise<Object|null>} Knowledge document or null
+ */
+const getKnowledgeDocument = async (documentId) => {
+  try {
+    return await TeamKnowledge.findOne({ documentId }).lean();
+  } catch (error) {
+    logger.error('[TeamKnowledge] Error getting document:', error);
+    return null;
+  }
+};
+
+/**
+ * Deletes a knowledge document
+ * @param {string} documentId - The document ID
+ * @returns {Promise<boolean>} Success status
+ */
+const deleteKnowledgeDocument = async (documentId) => {
+  try {
+    await TeamKnowledge.deleteOne({ documentId });
+    logger.info(`[TeamKnowledge] Deleted document ${documentId}`);
+    return true;
+  } catch (error) {
+    logger.error('[TeamKnowledge] Error deleting document:', error);
+    return false;
+  }
+};
+
+/**
+ * Clears all knowledge for a conversation
+ * @param {string} conversationId - The conversation ID
+ * @returns {Promise<number>} Number of documents deleted
+ */
+const clearKnowledge = async (conversationId) => {
+  try {
+    const result = await TeamKnowledge.deleteMany({ conversationId });
+    logger.info(`[TeamKnowledge] Cleared ${result.deletedCount} documents from conversation ${conversationId}`);
+    return result.deletedCount;
+  } catch (error) {
+    logger.error('[TeamKnowledge] Error clearing knowledge:', error);
+    return 0;
+  }
+};
+
+/**
+ * Formats knowledge documents for context injection
+ * @param {string} conversationId - The conversation ID
+ * @returns {Promise<string>} Formatted knowledge context
+ */
+const getKnowledgeContext = async (conversationId) => {
+  try {
+    const docs = await getKnowledge(conversationId);
+    
+    if (docs.length === 0) {
+      return '';
+    }
+
+    const context = docs
+      .map((doc, i) => `### Document ${i + 1}: ${doc.title}\n${doc.content}`)
+      .join('\n\n---\n\n');
+
+    return `## Team Knowledge Base\nThe following documents have been previously created and approved by the team:\n\n${context}`;
+  } catch (error) {
+    logger.error('[TeamKnowledge] Error formatting knowledge context:', error);
+    return '';
+  }
+};
+
+module.exports = {
+  TeamKnowledge,
+  saveToKnowledge,
+  getKnowledge,
+  getKnowledgeDocument,
+  deleteKnowledgeDocument,
+  clearKnowledge,
+  getKnowledgeContext,
+};
+
