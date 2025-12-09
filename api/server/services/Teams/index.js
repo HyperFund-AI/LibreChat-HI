@@ -10,9 +10,10 @@ const {
   DR_STERLING_AGENT_ID,
 } = require('./drSterlingAgent');
 const {
-  executeTeamAgent,
+  executeLeadAnalysis,
+  executeSpecialist,
+  synthesizeDeliverable,
   orchestrateTeamResponse,
-  formatAsMarkdownDocument,
   shouldUseTeamOrchestration,
 } = require('./orchestrator');
 
@@ -34,9 +35,10 @@ module.exports = {
   DR_STERLING_AGENT_ID,
   
   // Team Orchestration
-  executeTeamAgent,
+  executeLeadAnalysis,
+  executeSpecialist,
+  synthesizeDeliverable,
   orchestrateTeamResponse,
-  formatAsMarkdownDocument,
   shouldUseTeamOrchestration,
   
   // Prompts

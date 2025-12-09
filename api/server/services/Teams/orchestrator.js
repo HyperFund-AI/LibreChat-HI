@@ -4,140 +4,165 @@ const Anthropic = require('@anthropic-ai/sdk');
 const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
 
 /**
- * Team Orchestrator - Coordinates multi-agent collaboration
+ * Team Orchestrator - Smart Collaboration Flow
  * 
- * All team members contribute to every objective:
- * 1. Project Lead analyzes and creates work plan
- * 2. Each specialist contributes from their expertise
- * 3. QA reviews and validates
- * 4. Final deliverable is compiled as Markdown
+ * 1. Project Lead analyzes objective and selects relevant specialists
+ * 2. Only selected specialists contribute their expertise
+ * 3. Project Lead synthesizes all input into ONE unified deliverable
  */
 
 /**
- * Executes a single team agent and gets their response
- * @param {Object} params
- * @returns {Promise<Object>} Agent response with metadata
+ * Phase 1: Lead analyzes objective and creates work plan
  */
-const executeTeamAgent = async ({ 
-  agent, 
-  userMessage, 
-  conversationHistory, 
-  previousResponses,
-  projectContext,
-  apiKey,
-  isLead,
-  isQA,
-}) => {
-  try {
-    logger.info(`[executeTeamAgent] Executing: ${agent.name} (${agent.role})`);
+const executeLeadAnalysis = async ({ lead, userMessage, apiKey, teamAgents }) => {
+  const specialistList = teamAgents
+    .filter(a => parseInt(a.tier) !== 3) // Exclude lead
+    .map((a, i) => `${i + 1}. ${a.name} (${a.role}): ${a.expertise || a.responsibilities || 'Specialist'}`)
+    .join('\n');
 
-    let roleContext = '';
-    if (isLead) {
-      roleContext = `
-As the Project Lead, you are FIRST to respond. Your job is to:
+  const systemPrompt = `You are ${lead.name}, ${lead.role}.
+
+${lead.instructions || ''}
+
+You are the Project Lead. Your job is to:
 1. Analyze the user's objective
-2. Break it down into key areas that need to be addressed
-3. Outline what each team member should focus on
-4. Set the strategic direction
+2. Decide which team specialists are needed (you don't need all of them!)
+3. Create clear assignments for each selected specialist
 
-Format your response as:
-## Project Analysis
-[Your analysis of the objective]
+Available Specialists:
+${specialistList}
 
-## Work Allocation
-[Brief description of what each team member should address]
+IMPORTANT: Respond in this EXACT JSON format:
+{
+  "analysis": "Brief analysis of what the objective requires",
+  "selectedSpecialists": [1, 2], // Array of specialist numbers (1-indexed) that are NEEDED
+  "assignments": {
+    "1": "Specific task for specialist 1",
+    "2": "Specific task for specialist 2"
+  },
+  "deliverableOutline": "Brief outline of the final deliverable structure"
+}
 
-## Key Questions to Answer
-[List the main questions this analysis should answer]
-`;
-    } else if (isQA) {
-      roleContext = `
-As Quality Assurance, you are LAST to respond. Your job is to:
-1. Review all team members' contributions
-2. Identify any gaps or inconsistencies
-3. Synthesize the key findings
-4. Provide final recommendations
+Only select specialists whose expertise is genuinely needed. For simple tasks, you might only need 1-2 specialists.`;
 
-Previous team contributions:
-${previousResponses.map(r => `### ${r.agentName} (${r.agentRole})\n${r.response}`).join('\n\n')}
+  const client = new Anthropic({ apiKey });
+  
+  const response = await client.messages.create({
+    model: DEFAULT_ANTHROPIC_MODEL,
+    max_tokens: 1000,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: `Objective: ${userMessage}` }],
+  });
 
-Format your response as:
-## Quality Review
-[Your assessment of the team's analysis]
-
-## Key Findings Summary
-[Synthesized findings from all team members]
-
-## Final Recommendations
-[Actionable recommendations based on team analysis]
-`;
-    } else {
-      roleContext = `
-The Project Lead has set the direction. Previous team contributions:
-${previousResponses.map(r => `### ${r.agentName} (${r.agentRole})\n${r.response}`).join('\n\n')}
-
-As ${agent.role}, provide your specialized analysis. Build on what others have said and add your unique expertise.
-
-Format your response with clear headers for your area of expertise.
-`;
+  const responseText = response.content[0]?.text || '';
+  
+  // Parse JSON from response
+  try {
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
     }
-
-    const systemPrompt = `You are ${agent.name}, a ${agent.role}.
-
-${agent.instructions || ''}
-
-Your expertise: ${agent.expertise || agent.responsibilities || 'General specialist'}
-
-${roleContext}
-
-Guidelines:
-- Be specific and actionable
-- Use bullet points and clear structure
-- Reference data and facts when possible
-- Keep your response focused (300-500 words max)
-- Use Markdown formatting`;
-
-    const client = new Anthropic({ apiKey });
-    
-    const response = await client.messages.create({
-      model: agent.model || DEFAULT_ANTHROPIC_MODEL,
-      max_tokens: 1500,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: `Objective: ${userMessage}\n\n${projectContext ? `Context:\n${projectContext}` : ''}`,
-        },
-      ],
-    });
-
-    const responseText = response.content[0]?.text || '';
-    
-    logger.info(`[executeTeamAgent] ${agent.name} responded (${responseText.length} chars)`);
-
-    return {
-      agentId: agent.agentId,
-      agentName: agent.name,
-      agentRole: agent.role,
-      response: responseText,
-      tier: agent.tier,
-    };
-  } catch (error) {
-    logger.error(`[executeTeamAgent] Error from ${agent.name}:`, error);
-    return {
-      agentId: agent.agentId,
-      agentName: agent.name,
-      agentRole: agent.role,
-      response: `[Unable to generate response: ${error.message}]`,
-      error: true,
-    };
+  } catch (e) {
+    logger.warn('[executeLeadAnalysis] Could not parse JSON, using all specialists');
   }
+  
+  // Fallback: use all specialists
+  const allIndices = teamAgents
+    .filter(a => parseInt(a.tier) !== 3)
+    .map((_, i) => i + 1);
+  
+  return {
+    analysis: responseText,
+    selectedSpecialists: allIndices,
+    assignments: {},
+    deliverableOutline: 'Comprehensive analysis',
+  };
 };
 
 /**
- * Orchestrates full team collaboration - ALL agents participate
- * @param {Object} params
- * @returns {Promise<Object>} Complete team response
+ * Phase 2: Execute selected specialists
+ */
+const executeSpecialist = async ({ agent, assignment, userMessage, apiKey }) => {
+  const systemPrompt = `You are ${agent.name}, a ${agent.role}.
+
+${agent.instructions || ''}
+
+Your expertise: ${agent.expertise || agent.responsibilities || 'Specialist'}
+
+You have been assigned a specific task by the Project Lead.
+
+Guidelines:
+- Focus ONLY on your assigned area
+- Be specific, actionable, and data-driven
+- Use bullet points and clear structure
+- Keep response focused (200-400 words)
+- Provide insights only YOU as a specialist can provide`;
+
+  const client = new Anthropic({ apiKey });
+  
+  const response = await client.messages.create({
+    model: agent.model || DEFAULT_ANTHROPIC_MODEL,
+    max_tokens: 1200,
+    system: systemPrompt,
+    messages: [{
+      role: 'user',
+      content: `Overall Objective: ${userMessage}\n\nYour Specific Assignment: ${assignment || 'Provide your specialist analysis on this objective.'}`,
+    }],
+  });
+
+  return response.content[0]?.text || '';
+};
+
+/**
+ * Phase 3: Lead synthesizes into final deliverable
+ */
+const synthesizeDeliverable = async ({ lead, userMessage, specialistInputs, deliverableOutline, apiKey }) => {
+  const inputsSummary = specialistInputs
+    .map(s => `### ${s.name} (${s.role})\n${s.response}`)
+    .join('\n\n---\n\n');
+
+  const systemPrompt = `You are ${lead.name}, ${lead.role}.
+
+You have received input from your specialist team. Your job is to synthesize their contributions into ONE cohesive, professional deliverable.
+
+DO NOT just combine their responses. Create a UNIFIED document that:
+1. Has a clear executive summary
+2. Integrates insights from all specialists seamlessly
+3. Provides actionable recommendations
+4. Is written as ONE coherent narrative
+5. Uses proper Markdown formatting
+
+The deliverable should read as if written by one expert, not as separate sections from different people.`;
+
+  const client = new Anthropic({ apiKey });
+  
+  const response = await client.messages.create({
+    model: DEFAULT_ANTHROPIC_MODEL,
+    max_tokens: 4000,
+    system: systemPrompt,
+    messages: [{
+      role: 'user',
+      content: `# Objective
+${userMessage}
+
+# Deliverable Structure
+${deliverableOutline || 'Professional analysis document'}
+
+# Specialist Inputs
+
+${inputsSummary}
+
+---
+
+Now synthesize all of this into ONE unified, professional deliverable document in Markdown format. Do not reference "the team" or "specialists said" - write it as a cohesive document.`,
+    }],
+  });
+
+  return response.content[0]?.text || '';
+};
+
+/**
+ * Main orchestration function
  */
 const orchestrateTeamResponse = async ({
   userMessage,
@@ -149,62 +174,134 @@ const orchestrateTeamResponse = async ({
   onAgentComplete,
 }) => {
   try {
-    logger.info(`[orchestrateTeamResponse] Starting with ${teamAgents.length} agents`);
+    logger.info(`[orchestrateTeamResponse] Starting smart orchestration with ${teamAgents.length} agents`);
 
     const apiKey = config?.endpoints?.anthropic?.apiKey || process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       throw new Error('Anthropic API key not configured');
     }
 
-    // Sort agents by tier: Lead (3) first, then Specialists (4), then QA (5)
-    const sortedAgents = [...teamAgents].sort((a, b) => {
-      const tierA = parseInt(a.tier) || 4;
-      const tierB = parseInt(b.tier) || 4;
-      return tierA - tierB;
-    });
+    // Find the lead and specialists
+    const lead = teamAgents.find(a => parseInt(a.tier) === 3);
+    const specialists = teamAgents.filter(a => parseInt(a.tier) !== 3 && parseInt(a.tier) !== 5);
+    const qa = teamAgents.find(a => parseInt(a.tier) === 5);
 
-    const responses = [];
-    
-    // Execute ALL agents in order
-    for (let i = 0; i < sortedAgents.length; i++) {
-      const agent = sortedAgents[i];
-      const tier = parseInt(agent.tier) || 4;
-      const isLead = tier === 3;
-      const isQA = tier === 5;
-
-      // Notify UI
-      if (onAgentStart) {
-        onAgentStart(agent);
-      }
-
-      const agentResponse = await executeTeamAgent({
-        agent,
-        userMessage,
-        conversationHistory,
-        previousResponses: responses,
-        projectContext: fileContext,
-        apiKey,
-        isLead,
-        isQA,
-      });
-
-      responses.push(agentResponse);
-
-      if (onAgentComplete) {
-        onAgentComplete(agentResponse);
-      }
+    if (!lead) {
+      // No lead - use first agent as lead
+      logger.warn('[orchestrateTeamResponse] No lead found, using first agent');
     }
 
-    // Format as comprehensive Markdown document
-    const formattedResponse = formatAsMarkdownDocument(userMessage, responses);
+    const actualLead = lead || teamAgents[0];
+    const responses = [];
 
-    logger.info(`[orchestrateTeamResponse] Completed with ${responses.length} responses`);
+    // PHASE 1: Lead Analysis
+    if (onAgentStart) onAgentStart({ ...actualLead, phase: 'analyzing' });
+    
+    logger.info(`[orchestrateTeamResponse] Phase 1: Lead (${actualLead.name}) analyzing objective`);
+    const workPlan = await executeLeadAnalysis({
+      lead: actualLead,
+      userMessage,
+      apiKey,
+      teamAgents,
+    });
+
+    responses.push({
+      agentId: actualLead.agentId,
+      agentName: actualLead.name,
+      agentRole: actualLead.role,
+      response: `**Work Plan:** ${workPlan.analysis}`,
+      phase: 'planning',
+    });
+
+    if (onAgentComplete) onAgentComplete({
+      agentName: actualLead.name,
+      agentRole: actualLead.role,
+      response: `Analyzing objective and selecting team members...`,
+      phase: 'planning',
+    });
+
+    // PHASE 2: Execute Selected Specialists
+    const selectedIndices = workPlan.selectedSpecialists || [];
+    const selectedSpecialists = selectedIndices
+      .map(idx => specialists[idx - 1])
+      .filter(Boolean);
+
+    logger.info(`[orchestrateTeamResponse] Phase 2: Executing ${selectedSpecialists.length} specialists`);
+
+    const specialistInputs = [];
+    
+    for (const specialist of selectedSpecialists) {
+      if (onAgentStart) onAgentStart(specialist);
+      
+      const assignment = workPlan.assignments?.[selectedIndices.indexOf(specialists.indexOf(specialist) + 1) + 1] || '';
+      
+      const specialistResponse = await executeSpecialist({
+        agent: specialist,
+        assignment,
+        userMessage,
+        apiKey,
+      });
+
+      specialistInputs.push({
+        name: specialist.name,
+        role: specialist.role,
+        response: specialistResponse,
+      });
+
+      responses.push({
+        agentId: specialist.agentId,
+        agentName: specialist.name,
+        agentRole: specialist.role,
+        response: specialistResponse,
+        phase: 'analysis',
+      });
+
+      if (onAgentComplete) onAgentComplete({
+        agentName: specialist.name,
+        agentRole: specialist.role,
+        response: `Completed specialist analysis`,
+        phase: 'analysis',
+      });
+    }
+
+    // PHASE 3: Synthesize Final Deliverable
+    if (onAgentStart) onAgentStart({ ...actualLead, phase: 'synthesizing' });
+    
+    logger.info(`[orchestrateTeamResponse] Phase 3: Lead synthesizing deliverable`);
+    
+    const finalDeliverable = await synthesizeDeliverable({
+      lead: actualLead,
+      userMessage,
+      specialistInputs,
+      deliverableOutline: workPlan.deliverableOutline,
+      apiKey,
+    });
+
+    if (onAgentComplete) onAgentComplete({
+      agentName: actualLead.name,
+      agentRole: actualLead.role,
+      response: `Deliverable complete`,
+      phase: 'synthesis',
+    });
+
+    // Format final response
+    const timestamp = new Date().toISOString().split('T')[0];
+    const teamCredits = `\n\n---\n\n_**Team Contributors:** ${actualLead.name} (Lead)${selectedSpecialists.length > 0 ? ', ' + selectedSpecialists.map(s => s.name).join(', ') : ''}_\n_**Generated:** ${timestamp}_`;
+
+    const formattedResponse = finalDeliverable + teamCredits;
+
+    logger.info(`[orchestrateTeamResponse] Completed - ${selectedSpecialists.length + 1} agents contributed`);
 
     return {
       success: true,
       responses,
       formattedResponse,
-      selectedAgents: sortedAgents.map(a => ({ id: a.agentId, name: a.name, role: a.role })),
+      selectedAgents: [actualLead, ...selectedSpecialists].map(a => ({ 
+        id: a.agentId, 
+        name: a.name, 
+        role: a.role 
+      })),
+      workPlan,
     };
   } catch (error) {
     logger.error('[orchestrateTeamResponse] Error:', error);
@@ -217,64 +314,6 @@ const orchestrateTeamResponse = async ({
 };
 
 /**
- * Formats all agent responses as a professional Markdown document
- */
-const formatAsMarkdownDocument = (objective, responses) => {
-  const timestamp = new Date().toISOString().split('T')[0];
-  
-  // Separate by tier
-  const leadResponses = responses.filter(r => parseInt(r.tier) === 3);
-  const specialistResponses = responses.filter(r => parseInt(r.tier) === 4 || !r.tier);
-  const qaResponses = responses.filter(r => parseInt(r.tier) === 5);
-
-  let markdown = `# Team Analysis Report
-
-**Date:** ${timestamp}  
-**Objective:** ${objective}
-
----
-
-`;
-
-  // Project Lead Section
-  if (leadResponses.length > 0) {
-    markdown += `## 📋 Project Leadership\n\n`;
-    for (const r of leadResponses) {
-      markdown += `### ${r.agentName}\n_${r.agentRole}_\n\n${r.response}\n\n`;
-    }
-    markdown += `---\n\n`;
-  }
-
-  // Specialist Analysis Section
-  if (specialistResponses.length > 0) {
-    markdown += `## 🔬 Specialist Analysis\n\n`;
-    for (const r of specialistResponses) {
-      markdown += `### ${r.agentName}\n_${r.agentRole}_\n\n${r.response}\n\n---\n\n`;
-    }
-  }
-
-  // QA Review Section
-  if (qaResponses.length > 0) {
-    markdown += `## ✅ Quality Assurance Review\n\n`;
-    for (const r of qaResponses) {
-      markdown += `### ${r.agentName}\n_${r.agentRole}_\n\n${r.response}\n\n`;
-    }
-    markdown += `---\n\n`;
-  }
-
-  // Footer
-  markdown += `
----
-
-*This report was generated by your Superhuman Team. Each section represents the expert analysis of a specialized team member.*
-
-**Team Members:** ${responses.map(r => r.agentName).join(', ')}
-`;
-
-  return markdown;
-};
-
-/**
  * Checks if a conversation should use team orchestration
  */
 const shouldUseTeamOrchestration = (conversation) => {
@@ -283,8 +322,9 @@ const shouldUseTeamOrchestration = (conversation) => {
 };
 
 module.exports = {
-  executeTeamAgent,
+  executeLeadAnalysis,
+  executeSpecialist,
+  synthesizeDeliverable,
   orchestrateTeamResponse,
-  formatAsMarkdownDocument,
   shouldUseTeamOrchestration,
 };
