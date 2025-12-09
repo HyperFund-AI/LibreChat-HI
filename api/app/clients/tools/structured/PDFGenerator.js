@@ -5,6 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
+const sharp = require('sharp');
 const { logger } = require('@librechat/data-schemas');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
@@ -88,40 +89,59 @@ class PDFGenerator extends Tool {
   }
 
   /**
-   * Downloads an image from a URL or converts base64 to buffer
+   * Downloads an image from a URL or converts base64 to buffer, then converts to PNG/JPEG for pdfkit compatibility
    * @param {string} imageSource - URL or base64 data URI
-   * @returns {Promise<Buffer>} Image buffer
+   * @returns {Promise<Buffer>} Image buffer in PNG format (pdfkit compatible)
    */
   async getImageBuffer(imageSource) {
     try {
+      let imageBuffer;
+
       // Handle base64 data URIs
       if (imageSource.startsWith('data:image/')) {
         const base64Match = imageSource.match(/^data:image\/\w+;base64,(.+)$/);
         if (base64Match) {
-          return Buffer.from(base64Match[1], 'base64');
+          imageBuffer = Buffer.from(base64Match[1], 'base64');
+        } else {
+          throw new Error('Invalid base64 data URI format');
         }
-      }
-
-      // Handle URLs
-      if (imageSource.startsWith('http://') || imageSource.startsWith('https://')) {
+      } else if (imageSource.startsWith('http://') || imageSource.startsWith('https://')) {
+        // Handle URLs
         const response = await axios({
           url: imageSource,
           responseType: 'arraybuffer',
           timeout: 30000,
         });
-        return Buffer.from(response.data, 'binary');
+        imageBuffer = Buffer.from(response.data, 'binary');
+      } else if (typeof imageSource === 'string' && imageSource.length > 100) {
+        // If it's already a base64 string without data URI prefix
+        try {
+          imageBuffer = Buffer.from(imageSource, 'base64');
+        } catch (e) {
+          throw new Error('Invalid base64 string format');
+        }
+      } else {
+        throw new Error(`Invalid image source format: ${imageSource.substring(0, 50)}...`);
       }
 
-      // If it's already a base64 string without data URI prefix
-      if (typeof imageSource === 'string' && imageSource.length > 100) {
+      // Convert image to PNG format using sharp (pdfkit works best with PNG/JPEG)
+      // This ensures compatibility regardless of the source format
+      try {
+        const convertedBuffer = await sharp(imageBuffer).png().toBuffer();
+        return convertedBuffer;
+      } catch (sharpError) {
+        logger.warn(
+          `[PDFGenerator] Sharp conversion failed, trying JPEG: ${sharpError.message}`,
+        );
+        // Fallback to JPEG if PNG conversion fails
         try {
-          return Buffer.from(imageSource, 'base64');
-        } catch (e) {
-          // Not valid base64, treat as URL
+          const jpegBuffer = await sharp(imageBuffer).jpeg().toBuffer();
+          return jpegBuffer;
+        } catch (jpegError) {
+          logger.error(`[PDFGenerator] Image conversion failed:`, jpegError);
+          throw new Error(`Failed to convert image to supported format: ${jpegError.message}`);
         }
       }
-
-      throw new Error(`Invalid image source format: ${imageSource.substring(0, 50)}...`);
     } catch (error) {
       logger.error(`[PDFGenerator] Error loading image from ${imageSource.substring(0, 50)}:`, error);
       throw new Error(`Failed to load image: ${error.message}`);
@@ -216,14 +236,30 @@ class PDFGenerator extends Tool {
                   doc.addPage();
                 }
 
-                // Add image - pdfkit will maintain aspect ratio if we specify fit
+                // Get image dimensions to calculate positioning
+                const imageMetadata = await sharp(imageBuffer).metadata();
+                const imageAspectRatio = imageMetadata.width / imageMetadata.height;
+                let finalWidth = maxWidth;
+                let finalHeight = maxWidth / imageAspectRatio;
+
+                // If height exceeds max, scale down
+                if (finalHeight > maxHeight) {
+                  finalHeight = maxHeight;
+                  finalWidth = maxHeight * imageAspectRatio;
+                }
+
                 // Center horizontally
-                const imageX = doc.page.margins.left;
-                doc.image(imageBuffer, imageX, doc.y, {
-                  fit: [maxWidth, maxHeight],
+                const imageX = (doc.page.width - finalWidth) / 2;
+                const imageY = doc.y;
+
+                // Add image with explicit dimensions
+                doc.image(imageBuffer, imageX, imageY, {
+                  width: finalWidth,
+                  height: finalHeight,
                 });
 
-                // Move down after image
+                // Move cursor down after image
+                doc.y = imageY + finalHeight;
                 doc.moveDown(1);
                 if (i < imagesToProcess.length - 1) {
                   doc.moveDown(1);
