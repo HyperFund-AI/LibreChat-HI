@@ -55,6 +55,7 @@ export default function useSSE(
   const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
   const setTeamCollaboration = useSetRecoilState(teamCollaborationAtom);
+  const setIsTeamApprovalLoading = useSetRecoilState(store.isTeamApprovalLoading);
 
   const {
     setMessages,
@@ -135,6 +136,8 @@ export default function useSSE(
           // Invalidate conversation queries to refresh team data
           queryClient.invalidateQueries([QueryKeys.conversation, submission.conversation.conversationId]);
           queryClient.invalidateQueries([QueryKeys.conversation, submission.conversation.conversationId, 'team']);
+          // Clear team approval loading state
+          setIsTeamApprovalLoading(false);
         }
         
         // Mark team collaboration as complete and reset after delay
@@ -159,6 +162,8 @@ export default function useSSE(
           console.error('Error in finalHandler:', error);
           setIsSubmitting(false);
           setShowStopButton(false);
+          // Clear team approval loading state on error
+          setIsTeamApprovalLoading(false);
         }
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
         console.log('final', data);
@@ -313,6 +318,9 @@ export default function useSSE(
 
       console.log('error in server stream.');
       (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
+
+      // Clear team approval loading state on error
+      setIsTeamApprovalLoading(false);
 
       let data: TResData | undefined = undefined;
       try {

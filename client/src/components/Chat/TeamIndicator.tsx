@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Users, Loader2, CheckCircle2, X, Bot, Briefcase, FileText, Sparkles, Wand2, BookOpen, Trash2, Eye, Calendar } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRecoilState } from 'recoil';
 import { QueryKeys, Constants, dataService } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
+import store from '~/store';
 
 interface KnowledgeDocument {
   documentId: string;
@@ -123,6 +125,31 @@ const containsTeamSpec = (text: string): boolean => {
   return TEAM_SPEC_PATTERNS.some(pattern => text.includes(pattern));
 };
 
+// Approval keywords that indicate user is approving the team
+const APPROVAL_KEYWORDS = [
+  'approved',
+  'approve',
+  'confirm',
+  'confirmed',
+  'looks good',
+  "let's go",
+  'create the team',
+  'perfect',
+  'yes',
+  'ok',
+  'okay',
+  'go ahead',
+  'proceed',
+  'create team',
+];
+
+// Check if message text contains approval keywords
+const isApprovalMessage = (text: string): boolean => {
+  if (!text) return false;
+  const lowerText = text.toLowerCase().trim();
+  return APPROVAL_KEYWORDS.some(keyword => lowerText.includes(keyword.toLowerCase()));
+};
+
 export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -132,6 +159,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
   const [activeTab, setActiveTab] = useState<'team' | 'knowledge'>('team');
   const [selectedDocument, setSelectedDocument] = useState<KnowledgeDocument | null>(null);
   const queryClient = useQueryClient();
+  const [isTeamApprovalLoading, setIsTeamApprovalLoading] = useRecoilState(store.isTeamApprovalLoading);
   
   const conversationId = conversation?.conversationId;
   const isNewConvo = !conversationId || conversationId === Constants.NEW_CONVO;
@@ -230,6 +258,30 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
     if (!teamSpecMessage?.isComplete || hasTeam) return false;
     return true;
   }, [teamSpecMessage, hasTeam]);
+
+  // Detect approval messages and set loading state
+  useEffect(() => {
+    if (!messages || hasTeam || isTeamApprovalLoading) return;
+    
+    // Check the latest user message for approval keywords
+    const latestUserMessage = [...messages].reverse().find(m => m.isCreatedByUser);
+    if (latestUserMessage) {
+      const text = extractMessageText(latestUserMessage);
+      // Only set loading if we're awaiting confirmation and user sent approval
+      if (awaitingConfirmation && isApprovalMessage(text)) {
+        setIsTeamApprovalLoading(true);
+        setIsCreating(true);
+      }
+    }
+  }, [messages, awaitingConfirmation, hasTeam, isTeamApprovalLoading, setIsTeamApprovalLoading]);
+
+  // Clear loading state when team is created
+  useEffect(() => {
+    if (hasTeam && isTeamApprovalLoading) {
+      setIsTeamApprovalLoading(false);
+      setIsCreating(false);
+    }
+  }, [hasTeam, isTeamApprovalLoading, setIsTeamApprovalLoading]);
 
   // Show success animation when team is created
   useEffect(() => {
