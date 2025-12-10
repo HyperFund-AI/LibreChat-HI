@@ -15,6 +15,8 @@ const {
   convertParsedTeamToAgents,
   isTeamRelatedMessage,
   mergeTeamMembers,
+  extractTeamCompositionWithLLM,
+  validateAndEnhanceTeam,
 } = require('~/server/services/Teams');
 const { getTeamAgents, getTeamInfo, saveTeamAgents } = require('~/models/Conversation');
 const { getMessages } = require('~/models');
@@ -773,36 +775,54 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
             }
             
             if (teamRelatedMessages.length > 0) {
-              logger.info(`[AgentController] Found ${teamRelatedMessages.length} team-related messages, parsing and merging...`);
+              logger.info(`[AgentController] Found ${teamRelatedMessages.length} team-related messages, extracting with LLM...`);
               
-              // Parse team from each message
-              const parsedTeams = [];
-              for (const msgData of teamRelatedMessages) {
-                const parsedTeam = parseTeamFromMarkdown(msgData.text);
-                if (parsedTeam && parsedTeam.members && parsedTeam.members.length > 0) {
-                  parsedTeams.push(parsedTeam);
-                  logger.info(`[AgentController] Parsed ${parsedTeam.members.length} members from message ${msgData.messageId}`);
-                } else {
-                  logger.warn(`[AgentController] Failed to parse team from message ${msgData.messageId}`);
-                }
-              }
-              
-              if (parsedTeams.length > 0) {
-                // Merge all parsed teams, using latest information for each member
-                const mergedTeam = mergeTeamMembers(parsedTeams);
-                logger.info(`[AgentController] Merged ${parsedTeams.length} team specs into ${mergedTeam.members.length} unique members`);
+              try {
+                // Extract team composition using LLM (primary method)
+                const extractedTeam = await extractTeamCompositionWithLLM(teamRelatedMessages, userId);
                 
-                if (mergedTeam.members.length > 0) {
-                  const teamAgentsData = convertParsedTeamToAgents(mergedTeam, finalConversationId);
+                // Validate and enhance with regex as safety check
+                const validatedTeam = validateAndEnhanceTeam(extractedTeam, teamRelatedMessages);
+                
+                logger.info(`[AgentController] LLM extracted ${validatedTeam.members.length} team members`);
+                
+                if (validatedTeam.members.length > 0) {
+                  const teamAgentsData = convertParsedTeamToAgents(validatedTeam, finalConversationId);
                   logger.info(`[AgentController] Converted to ${teamAgentsData.length} agents, saving...`);
                   await saveTeamAgents(finalConversationId, teamAgentsData, DR_STERLING_AGENT_ID, null);
                   
-                  logger.info(`[AgentController] ✅ Team created with ${teamAgentsData.length} agents after aggregating ${teamRelatedMessages.length} team-related messages`);
+                  logger.info(`[AgentController] ✅ Team created with ${teamAgentsData.length} agents using LLM extraction from ${teamRelatedMessages.length} messages`);
                 } else {
-                  logger.warn('[AgentController] Merged team has no members');
+                  logger.warn('[AgentController] Validated team has no members');
                 }
-              } else {
-                logger.warn('[AgentController] No valid team specs found in team-related messages');
+              } catch (llmError) {
+                logger.error('[AgentController] LLM extraction failed, falling back to regex parsing:', llmError);
+                
+                // Fallback to regex-based parsing if LLM fails
+                const parsedTeams = [];
+                for (const msgData of teamRelatedMessages) {
+                  const parsedTeam = parseTeamFromMarkdown(msgData.text);
+                  if (parsedTeam && parsedTeam.members && parsedTeam.members.length > 0) {
+                    parsedTeams.push(parsedTeam);
+                    logger.info(`[AgentController] Parsed ${parsedTeam.members.length} members from message ${msgData.messageId} (fallback)`);
+                  }
+                }
+                
+                if (parsedTeams.length > 0) {
+                  const mergedTeam = mergeTeamMembers(parsedTeams);
+                  logger.info(`[AgentController] Merged ${parsedTeams.length} team specs into ${mergedTeam.members.length} unique members (fallback)`);
+                  
+                  if (mergedTeam.members.length > 0) {
+                    const teamAgentsData = convertParsedTeamToAgents(mergedTeam, finalConversationId);
+                    logger.info(`[AgentController] Converted to ${teamAgentsData.length} agents, saving...`);
+                    await saveTeamAgents(finalConversationId, teamAgentsData, DR_STERLING_AGENT_ID, null);
+                    
+                    logger.info(`[AgentController] ✅ Team created with ${teamAgentsData.length} agents using regex fallback`);
+                  }
+                } else {
+                  logger.error('[AgentController] Both LLM and regex parsing failed');
+                  throw new Error('Failed to extract team composition from messages');
+                }
               }
             } else {
               logger.warn('[AgentController] [TEAM_CONFIRMED] found but no team-related messages in conversation history');
