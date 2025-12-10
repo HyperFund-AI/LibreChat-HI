@@ -21,7 +21,7 @@ const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { getAgent } = require('~/models/Agent');
 const { logViolation } = require('~/cache');
-const { getTeamAgents, getConvo } = require('~/models/Conversation');
+const { getConvo } = require('~/models/Conversation');
 
 /**
  * @param {AbortSignal} signal

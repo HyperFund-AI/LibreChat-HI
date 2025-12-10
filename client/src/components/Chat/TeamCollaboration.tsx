@@ -9,9 +9,8 @@ const TeamCollaboration = memo(() => {
   const [isVisible, setIsVisible] = useState(false);
 
   // Get the latest step (current activity)
-  const currentStep = collaboration.steps.length > 0 
-    ? collaboration.steps[collaboration.steps.length - 1] 
-    : null;
+  const currentStep =
+    collaboration.steps.length > 0 ? collaboration.steps[collaboration.steps.length - 1] : null;
 
   // Show/hide based on activity
   useEffect(() => {
@@ -84,8 +83,8 @@ const TeamCollaboration = memo(() => {
   };
 
   const display = getStepDisplay();
-  const completedCount = collaboration.steps.filter(s => 
-    s.action === 'completed' || s.action === 'complete' || s.action === 'planned'
+  const completedCount = collaboration.steps.filter(
+    (s) => s.action === 'completed' || s.action === 'complete' || s.action === 'planned',
   ).length;
 
   return (
@@ -106,9 +105,7 @@ const TeamCollaboration = memo(() => {
         {/* Current Activity */}
         <div className="flex items-center gap-2">
           <span className={cn('flex-shrink-0', display.color)}>{display.icon}</span>
-          <span className="font-medium text-gray-900 dark:text-white">
-            {currentStep.agent}
-          </span>
+          <span className="font-medium text-gray-900 dark:text-white">{currentStep.agent}</span>
         </div>
 
         {/* Message */}

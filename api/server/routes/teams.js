@@ -7,12 +7,7 @@ const {
   convertParsedTeamToAgents,
   DR_STERLING_AGENT_ID,
 } = require('~/server/services/Teams');
-const {
-  saveTeamAgents,
-  getTeamAgents,
-  getTeamInfo,
-  clearTeamAgents,
-} = require('~/models/Conversation');
+const { saveTeamAgents, getTeamInfo, clearTeamAgents } = require('~/models/Conversation');
 const { teamChatController } = require('~/server/controllers/teams');
 const {
   saveToKnowledge,

@@ -22,7 +22,7 @@ const createTeamAgents = async ({
       `[createTeamAgents] Creating ${roles.length} team agents for conversation ${conversationId}`,
     );
 
-    const teamAgents = roles.map((role, index) => {
+    const teamAgents = roles.map((role) => {
       const timestamp = Date.now();
       const agentId = `team_${conversationId}_${role.role.toLowerCase().replace(/\s+/g, '_')}_${timestamp}`;
 

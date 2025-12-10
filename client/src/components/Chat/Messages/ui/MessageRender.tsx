@@ -195,13 +195,14 @@ const MessageRender = memo(
                   setSiblingIdx={setSiblingIdx ?? (() => ({}))}
                 />
                 {/* Team document actions for team collaboration responses */}
-                {!msg.isCreatedByUser && (msg.sender === 'Team' || msg.model === 'team-collaboration') && (
-                  <TeamDocumentActions
-                    content={msg.text || ''}
-                    messageId={msg.messageId}
-                    isTeamResponse={true}
-                  />
-                )}
+                {!msg.isCreatedByUser &&
+                  (msg.sender === 'Team' || msg.model === 'team-collaboration') && (
+                    <TeamDocumentActions
+                      content={msg.text || ''}
+                      messageId={msg.messageId}
+                      isTeamResponse={true}
+                    />
+                  )}
               </MessageContext.Provider>
             </div>
 

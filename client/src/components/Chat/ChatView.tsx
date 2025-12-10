@@ -117,6 +117,7 @@ function ChatView({ index = 0 }: { index?: number }) {
                       <p className="text-lg font-semibold text-gray-900 dark:text-white">
                         Creating Team...
                       </p>
+                      {/* eslint-disable-next-line i18next/no-literal-string */}
                       <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                         Confirming with Dr. Sterling and assembling your Superhuman Team
                       </p>

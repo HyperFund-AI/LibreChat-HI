@@ -1,9 +1,9 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { logger } = require('@librechat/data-schemas');
-const { EModelEndpoint, anthropicSettings } = require('librechat-data-provider');
+const { EModelEndpoint } = require('librechat-data-provider');
 const { getUserKey } = require('~/server/services/UserService');
 const { parseText } = require('@librechat/api');
-const { getCoordinatorAgent, DEFAULT_ANTHROPIC_MODEL } = require('./createCoordinatorAgent');
+const { DEFAULT_ANTHROPIC_MODEL } = require('./createCoordinatorAgent');
 const { FILE_ANALYSIS_PROMPT } = require('./prompts');
 
 /**

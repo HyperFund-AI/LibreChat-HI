@@ -7,7 +7,6 @@ const fs = require('fs');
 const axios = require('axios');
 const sharp = require('sharp');
 const { logger } = require('@librechat/data-schemas');
-const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { FileContext, FileSources } = require('librechat-data-provider');
 const { createFile } = require('~/models/File');
@@ -168,7 +167,7 @@ class PDFGenerator extends Tool {
                 logger.info(
                   '[PDFGenerator] Successfully fetched OpenAI image without authentication',
                 );
-              } catch (fallbackError) {
+              } catch (_fallbackError) {
                 throw new Error(
                   'OpenAI image URL requires authentication or has expired. ' +
                     'When using image generation tools (like DALL-E) in agent mode, they return base64 data URIs. ' +
@@ -190,7 +189,7 @@ class PDFGenerator extends Tool {
         // If it's already a base64 string without data URI prefix
         try {
           imageBuffer = Buffer.from(imageSource, 'base64');
-        } catch (e) {
+        } catch (_e) {
           throw new Error('Invalid base64 string format');
         }
       } else {
@@ -366,7 +365,6 @@ class PDFGenerator extends Tool {
           try {
             // Read the generated PDF file
             const pdfBuffer = fs.readFileSync(tempFilePath);
-            const fileSize = pdfBuffer.length;
 
             // Get file storage strategy
             const source = getFileStrategy(appConfig, {
@@ -417,9 +415,9 @@ class PDFGenerator extends Tool {
 
             await createFile(file, true);
 
-            // Clean up temp file if it was moved
+            // Clean up temp file
             try {
-              if (fs.existsSync(tempFilePath) && saveBuffer) {
+              if (fs.existsSync(tempFilePath)) {
                 fs.unlinkSync(tempFilePath);
               }
             } catch (cleanupError) {

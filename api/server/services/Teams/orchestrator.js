@@ -77,7 +77,7 @@ Only select specialists whose expertise is genuinely needed.`;
       }
       return plan;
     }
-  } catch (e) {
+  } catch (_e) {
     logger.warn('[executeLeadAnalysis] Could not parse JSON');
   }
 
@@ -227,8 +227,8 @@ Do NOT just combine responses. Write as if one expert authored the entire docume
 const orchestrateTeamResponse = async ({
   userMessage,
   teamAgents,
-  conversationHistory,
-  fileContext,
+  conversationHistory: _conversationHistory,
+  fileContext: _fileContext,
   knowledgeContext,
   config,
   onAgentStart,

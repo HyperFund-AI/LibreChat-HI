@@ -273,7 +273,6 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
   const drSterlingAgentUsed =
     req.body.agent_id === DR_STERLING_AGENT_ID || endpointOption?.agent_id === DR_STERLING_AGENT_ID;
   const isDrSterlingMode = drSterlingActivated || drSterlingAgentUsed;
-  const userName = req.drSterlingContext?.userName || null;
 
   if (isDrSterlingMode) {
     logger.info(
