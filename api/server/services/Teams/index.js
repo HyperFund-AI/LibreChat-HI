@@ -7,6 +7,8 @@ const {
   isDrSterlingAgent,
   parseTeamFromMarkdown,
   convertParsedTeamToAgents,
+  isTeamRelatedMessage,
+  mergeTeamMembers,
   DR_STERLING_AGENT_ID,
 } = require('./drSterlingAgent');
 const {
@@ -32,6 +34,8 @@ module.exports = {
   isDrSterlingAgent,
   parseTeamFromMarkdown,
   convertParsedTeamToAgents,
+  isTeamRelatedMessage,
+  mergeTeamMembers,
   DR_STERLING_AGENT_ID,
   
   // Team Orchestration

@@ -13,6 +13,8 @@ const {
   orchestrateTeamResponse,
   parseTeamFromMarkdown,
   convertParsedTeamToAgents,
+  isTeamRelatedMessage,
+  mergeTeamMembers,
 } = require('~/server/services/Teams');
 const { getTeamAgents, getTeamInfo, saveTeamAgents } = require('~/models/Conversation');
 const { getMessages } = require('~/models');
@@ -656,64 +658,169 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
               return;
             }
 
-            // Get conversation messages to find team specification
-            const conversationMessages = await getMessages({ conversationId: finalConversationId }, '-createdAt') || [];
-            logger.info(`[AgentController] Found ${conversationMessages.length} messages in conversation`);
-            
-            // Find the message with team specification (look for SUPERHUMAN TEAM patterns)
-            // Text might be in msg.text OR in msg.content array
-            let teamSpecContent = null;
-            for (const msg of conversationMessages) {
-              // Try text property first
-              let msgText = msg.text || '';
-              
-              // If text is empty, try to extract from content array
-              if (!msgText && msg.content && Array.isArray(msg.content)) {
-                msgText = msg.content
-                  .filter(part => part && part.type === 'text')
-                  .map(part => part.text?.value || part.text || '')
-                  .join('');
+            // Helper function to extract text from a message object
+            const extractMessageText = (msg) => {
+              // Try direct text property first
+              if (msg.text && typeof msg.text === 'string' && msg.text.trim().length > 0) {
+                return msg.text;
               }
               
-              if (msgText.includes('# SUPERHUMAN TEAM:') || 
-                  msgText.includes('## SUPERHUMAN SPECIFICATIONS') ||
-                  msgText.includes('SUPERHUMAN TEAM:') ||
-                  msgText.includes('## TEAM COMPOSITION')) {
-                teamSpecContent = msgText;
-                logger.info(`[AgentController] Found team spec in message ${msg.messageId} (${msgText.length} chars)`);
+              // Try content array
+              if (msg.content && Array.isArray(msg.content)) {
+                const textParts = [];
+                for (const part of msg.content) {
+                  if (!part) continue;
+                  
+                  // Handle different content part formats
+                  if (part.type === 'text') {
+                    if (typeof part.text === 'string') {
+                      textParts.push(part.text);
+                    } else if (part.text && typeof part.text === 'object') {
+                      // Handle { text: { value: "..." } } format
+                      if (part.text.value && typeof part.text.value === 'string') {
+                        textParts.push(part.text.value);
+                      } else if (typeof part.text === 'string') {
+                        textParts.push(part.text);
+                      }
+                    }
+                  } else if (typeof part === 'string') {
+                    // Sometimes content parts are just strings
+                    textParts.push(part);
+                  } else if (part.text && typeof part.text === 'string') {
+                    // Fallback: try to get text property directly
+                    textParts.push(part.text);
+                  }
+                }
+                
+                const extracted = textParts.join('');
+                if (extracted.trim().length > 0) {
+                  return extracted;
+                }
+              }
+              
+              // Try to stringify the entire message for debugging
+              logger.debug(`[AgentController] Message ${msg.messageId} has no extractable text. Keys: ${Object.keys(msg).join(', ')}`);
+              
+              return '';
+            };
+            
+            // Get conversation messages to find all team-related specifications
+            // Don't pass select parameter to get all fields (we need text, content, isCreatedByUser, etc.)
+            const conversationMessages = await getMessages({ conversationId: finalConversationId }) || [];
+            logger.info(`[AgentController] Found ${conversationMessages.length} messages in conversation`);
+            
+            // Sort by createdAt ascending to process from oldest to newest
+            conversationMessages.sort((a, b) => {
+              const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+              const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+              return aTime - bTime;
+            });
+            
+            // Debug: Log first message structure
+            if (conversationMessages.length > 0) {
+              const firstMsg = conversationMessages[0];
+              logger.debug(`[AgentController] Sample message structure: ${JSON.stringify({
+                messageId: firstMsg.messageId,
+                hasText: !!firstMsg.text,
+                textLength: firstMsg.text?.length || 0,
+                hasContent: !!firstMsg.content,
+                contentType: Array.isArray(firstMsg.content) ? 'array' : typeof firstMsg.content,
+                contentLength: Array.isArray(firstMsg.content) ? firstMsg.content.length : 0,
+                isCreatedByUser: firstMsg.isCreatedByUser,
+              })}`);
+            }
+            
+            // Find the message containing [TEAM_CONFIRMED] to establish a cutoff point
+            let confirmationMessageIndex = -1;
+            for (let i = conversationMessages.length - 1; i >= 0; i--) {
+              const msg = conversationMessages[i];
+              const msgText = extractMessageText(msg);
+              
+              if (msgText.includes('[TEAM_CONFIRMED]')) {
+                confirmationMessageIndex = i;
+                logger.info(`[AgentController] Found [TEAM_CONFIRMED] in message ${msg.messageId} at index ${i} (${msgText.length} chars)`);
                 break;
               }
             }
             
-            if (teamSpecContent) {
-              logger.info(`[AgentController] Parsing team from spec (${teamSpecContent.length} chars)...`);
-              const parsedTeam = parseTeamFromMarkdown(teamSpecContent);
-              logger.info(`[AgentController] Parsed team: ${parsedTeam ? parsedTeam.members?.length + ' members' : 'null'}`);
+            // Collect ALL team-related messages up to and including the confirmation message
+            // Only look at assistant messages (skip user messages)
+            const teamRelatedMessages = [];
+            const searchEndIndex = confirmationMessageIndex >= 0 ? confirmationMessageIndex + 1 : conversationMessages.length;
+            
+            for (let i = 0; i < searchEndIndex; i++) {
+              const msg = conversationMessages[i];
               
-              if (parsedTeam && parsedTeam.members && parsedTeam.members.length > 0) {
-                const teamAgentsData = convertParsedTeamToAgents(parsedTeam, finalConversationId);
-                logger.info(`[AgentController] Converted to ${teamAgentsData.length} agents, saving...`);
-                await saveTeamAgents(finalConversationId, teamAgentsData, DR_STERLING_AGENT_ID, null);
+              // Skip user messages, only look at assistant messages
+              if (msg.isCreatedByUser) {
+                continue;
+              }
+              
+              // Extract message text using robust extraction
+              const msgText = extractMessageText(msg);
+              
+              // Check if this message contains team specification content
+              if (msgText && isTeamRelatedMessage(msgText)) {
+                teamRelatedMessages.push({
+                  messageId: msg.messageId,
+                  text: msgText,
+                  createdAt: msg.createdAt,
+                });
+                logger.info(`[AgentController] Found team-related message ${msg.messageId} at index ${i} (${msgText.length} chars)`);
+              } else if (msgText.length > 0) {
+                logger.debug(`[AgentController] Message ${msg.messageId} at index ${i} is not team-related (${msgText.length} chars)`);
+              }
+            }
+            
+            if (teamRelatedMessages.length > 0) {
+              logger.info(`[AgentController] Found ${teamRelatedMessages.length} team-related messages, parsing and merging...`);
+              
+              // Parse team from each message
+              const parsedTeams = [];
+              for (const msgData of teamRelatedMessages) {
+                const parsedTeam = parseTeamFromMarkdown(msgData.text);
+                if (parsedTeam && parsedTeam.members && parsedTeam.members.length > 0) {
+                  parsedTeams.push(parsedTeam);
+                  logger.info(`[AgentController] Parsed ${parsedTeam.members.length} members from message ${msgData.messageId}`);
+                } else {
+                  logger.warn(`[AgentController] Failed to parse team from message ${msgData.messageId}`);
+                }
+              }
+              
+              if (parsedTeams.length > 0) {
+                // Merge all parsed teams, using latest information for each member
+                const mergedTeam = mergeTeamMembers(parsedTeams);
+                logger.info(`[AgentController] Merged ${parsedTeams.length} team specs into ${mergedTeam.members.length} unique members`);
                 
-                logger.info(`[AgentController] ✅ Team created with ${teamAgentsData.length} agents after Dr. Sterling confirmation`);
+                if (mergedTeam.members.length > 0) {
+                  const teamAgentsData = convertParsedTeamToAgents(mergedTeam, finalConversationId);
+                  logger.info(`[AgentController] Converted to ${teamAgentsData.length} agents, saving...`);
+                  await saveTeamAgents(finalConversationId, teamAgentsData, DR_STERLING_AGENT_ID, null);
+                  
+                  logger.info(`[AgentController] ✅ Team created with ${teamAgentsData.length} agents after aggregating ${teamRelatedMessages.length} team-related messages`);
+                } else {
+                  logger.warn('[AgentController] Merged team has no members');
+                }
               } else {
-                logger.warn('[AgentController] Team spec found but parsing failed - no members extracted');
-                logger.warn(`[AgentController] Parsed result: ${JSON.stringify(parsedTeam)}`);
+                logger.warn('[AgentController] No valid team specs found in team-related messages');
               }
             } else {
-            logger.warn('[AgentController] [TEAM_CONFIRMED] found but no team spec in conversation history');
-            // Log ALL message summaries for debugging (extracting from content if needed)
-            conversationMessages.forEach((msg, i) => {
-              let msgText = msg.text || '';
-              if (!msgText && msg.content && Array.isArray(msg.content)) {
-                msgText = msg.content
-                  .filter(part => part && part.type === 'text')
-                  .map(part => part.text?.value || part.text || '')
-                  .join('');
-              }
-              const preview = msgText.substring(0, 300);
-              logger.warn(`[AgentController] Message ${i} (${msgText.length} chars): ${preview}...`);
-            });
+              logger.warn('[AgentController] [TEAM_CONFIRMED] found but no team-related messages in conversation history');
+              // Log ALL message summaries for debugging (extracting from content if needed)
+              conversationMessages.forEach((msg, i) => {
+                const msgText = extractMessageText(msg);
+                const preview = msgText.substring(0, 300);
+                const isUser = msg.isCreatedByUser ? 'USER' : 'ASSISTANT';
+                logger.warn(`[AgentController] Message ${i} (${isUser}, ${msgText.length} chars): ${preview}...`);
+                if (msgText.length === 0) {
+                  logger.warn(`[AgentController] Message ${i} structure: ${JSON.stringify({
+                    messageId: msg.messageId,
+                    hasText: !!msg.text,
+                    hasContent: !!msg.content,
+                    contentType: Array.isArray(msg.content) ? 'array' : typeof msg.content,
+                  })}`);
+                }
+              });
             }
           } catch (teamError) {
             logger.error('[AgentController] Error creating team after confirmation:', teamError);
