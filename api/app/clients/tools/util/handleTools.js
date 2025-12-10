@@ -35,6 +35,7 @@ const {
   createYouTubeTools,
   TavilySearchResults,
   createOpenAIImageTools,
+  PDFGenerator,
 } = require('../');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -179,6 +180,7 @@ const loadTools = async ({
     'azure-ai-search': StructuredACS,
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
+    generate_pdf: PDFGenerator,
   };
 
   const customConstructors = {
@@ -370,12 +372,27 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
     }
 
     if (toolConstructors[tool]) {
-      const options = toolOptions[tool] || {};
+      // PDF Generator needs special handling to pass req and user context
+      if (tool === 'generate_pdf') {
+        const toolSpecificOptions = toolOptions[tool] || {};
+        // Merge tool-specific options with general options (which includes req)
+        const mergedOptions = { ...options, ...toolSpecificOptions };
+        requestedTools[tool] = async () => {
+          return new PDFGenerator({
+            req: mergedOptions.req,
+            userId: user,
+            // conversationId and messageId will be extracted from req.body if available
+          });
+        };
+        continue;
+      }
+      // For other tools, use original behavior (only tool-specific options)
+      const toolSpecificOptions = toolOptions[tool] || {};
       const toolInstance = loadToolWithAuth(
         user,
         getAuthFields(tool),
         toolConstructors[tool],
-        options,
+        toolSpecificOptions,
       );
       requestedTools[tool] = toolInstance;
       continue;

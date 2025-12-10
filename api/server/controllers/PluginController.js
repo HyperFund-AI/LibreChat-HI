@@ -75,12 +75,30 @@ const getAvailableTools = async (req, res) => {
     }
 
     /** @type {Record<string, FunctionTool> | null} Get tool definitions to filter which tools are actually available */
-    let toolDefinitions = await getCachedTools();
+    let toolDefinitions = null;
+    try {
+      toolDefinitions = await getCachedTools();
+    } catch (error) {
+      logger.error('[getAvailableTools] Error getting cached tools:', error);
+      // Fall back to app config if cache access fails
+    }
 
     if (toolDefinitions == null && appConfig?.availableTools != null) {
       logger.warn('[getAvailableTools] Tool cache was empty, re-initializing from app config');
-      await setCachedTools(appConfig.availableTools);
-      toolDefinitions = appConfig.availableTools;
+      try {
+        await setCachedTools(appConfig.availableTools);
+        toolDefinitions = appConfig.availableTools;
+      } catch (error) {
+        logger.error('[getAvailableTools] Error setting cached tools:', error);
+        // Use app config directly if cache write fails
+        toolDefinitions = appConfig.availableTools;
+      }
+    }
+
+    // Ensure toolDefinitions is an object, not null/undefined
+    if (!toolDefinitions || typeof toolDefinitions !== 'object') {
+      logger.warn('[getAvailableTools] Invalid toolDefinitions, using empty object');
+      toolDefinitions = {};
     }
 
     /** @type {import('@librechat/api').LCManifestTool[]} */
@@ -99,18 +117,27 @@ const getAvailableTools = async (req, res) => {
     /** Filter plugins based on availability */
     const toolsOutput = [];
     for (const plugin of authenticatedPlugins) {
-      const isToolDefined = toolDefinitions?.[plugin.pluginKey] !== undefined;
-      const isToolkit =
-        plugin.toolkit === true &&
-        Object.keys(toolDefinitions ?? {}).some(
-          (key) => getToolkitKey({ toolkits, toolName: key }) === plugin.pluginKey,
-        );
+      try {
+        const isToolDefined = toolDefinitions?.[plugin.pluginKey] !== undefined;
+        const isToolkit =
+          plugin.toolkit === true &&
+          Object.keys(toolDefinitions ?? {}).some(
+            (key) => getToolkitKey({ toolkits, toolName: key }) === plugin.pluginKey,
+          );
 
-      if (!isToolDefined && !isToolkit) {
+        if (!isToolDefined && !isToolkit) {
+          continue;
+        }
+
+        toolsOutput.push(plugin);
+      } catch (error) {
+        logger.error(
+          `[getAvailableTools] Error processing plugin ${plugin.pluginKey}:`,
+          error,
+        );
+        // Continue to next plugin instead of failing entirely
         continue;
       }
-
-      toolsOutput.push(plugin);
     }
 
     const finalTools = filterUniquePlugins(toolsOutput);

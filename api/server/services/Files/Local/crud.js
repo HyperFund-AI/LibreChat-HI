@@ -328,6 +328,13 @@ async function getLocalFileStream(req, filepath) {
         throw new Error(`Invalid file path: ${filepath}`);
       }
 
+      // Check if file exists before creating stream
+      if (!fs.existsSync(fullPath)) {
+        logger.error(`[getLocalFileStream] File not found: ${fullPath} (from filepath: ${filepath})`);
+        throw new Error(`File not found: ${fullPath}`);
+      }
+
+      logger.debug(`[getLocalFileStream] Reading file: ${fullPath}`);
       return fs.createReadStream(fullPath);
     } else if (filepath.includes('/images/')) {
       const basePath = filepath.split('/images/')[1];
