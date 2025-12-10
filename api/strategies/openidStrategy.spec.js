@@ -96,7 +96,9 @@ describe('setupOpenId', () => {
   const setupOpenIdAndCaptureCallback = async () => {
     await setupOpenIdAndCaptureCallback();
     if (!verifyCallback || typeof verifyCallback !== 'function') {
-      throw new Error('verifyCallback was not captured. The mock may not be working correctly with dynamic imports.');
+      throw new Error(
+        'verifyCallback was not captured. The mock may not be working correctly with dynamic imports.',
+      );
     }
     return verifyCallback;
   };
@@ -105,7 +107,11 @@ describe('setupOpenId', () => {
   const validate = (tokenset) =>
     new Promise((resolve, reject) => {
       if (!verifyCallback || typeof verifyCallback !== 'function') {
-        reject(new Error('verifyCallback is not a function. Make sure setupOpenId() was called and the mock is properly configured.'));
+        reject(
+          new Error(
+            'verifyCallback is not a function. Make sure setupOpenId() was called and the mock is properly configured.',
+          ),
+        );
         return;
       }
       verifyCallback(tokenset, (err, user, details) => {
