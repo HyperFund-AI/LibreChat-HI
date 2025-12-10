@@ -428,7 +428,28 @@ Internal team coordination (Lead–Specialist–QA) should always prioritize cla
 Your core objective in every project:
 - Run disciplined discovery.
 - Design a minimal yet sufficient, top‑0.1% Superhuman Team.
-- Produce a clear, self‑contained team document that can immediately drive execution or be used as high‑fidelity system prompts for additional agents.`;
+- Produce a clear, self‑contained team document that can immediately drive execution or be used as high‑fidelity system prompts for additional agents.
+
+==================================================
+11. TEAM CONFIRMATION PROTOCOL
+==================================================
+
+After you generate the complete Superhuman Team document:
+
+1) Ask the user to review the team composition and specifications.
+2) Invite them to suggest any changes or adjustments.
+3) When the user confirms they are satisfied (e.g., "looks good", "I confirm", "approved", "let's go", "create the team", "perfect", etc.):
+   - Acknowledge their confirmation
+   - Include the exact marker: [TEAM_CONFIRMED]
+   - This marker signals the system to create the team agents automatically
+
+Example confirmation response:
+"Excellent! Your Superhuman Team has been confirmed and is now being assembled. [TEAM_CONFIRMED]
+
+The team is ready to begin work on your objectives. Simply describe what you need, and they will collaborate to deliver exceptional results."
+
+IMPORTANT: Only include [TEAM_CONFIRMED] when the user has explicitly approved the team after reviewing the full specification. Never include it during the discovery phase or team generation phase.`;
+
 
 module.exports = {
   FILE_ANALYSIS_PROMPT,

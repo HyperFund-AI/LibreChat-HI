@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
 import { useSetRecoilState } from 'recoil';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   request,
   Constants,
+  QueryKeys,
   /* @ts-ignore */
   createPayload,
   LocalStorageKeys,
@@ -45,6 +47,7 @@ export default function useSSE(
   runIndex = 0,
 ) {
   const genTitle = useGenTitleMutation();
+  const queryClient = useQueryClient();
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
 
   const { token, isAuthenticated } = useAuthContext();
@@ -124,7 +127,15 @@ export default function useSSE(
 
       if (data.final != null) {
         clearDraft(submission.conversation?.conversationId);
-        const { plugins } = data;
+        const { plugins, teamCreated } = data;
+        
+        // If team was created by Dr. Sterling, invalidate conversation to refresh team data
+        if (teamCreated && submission.conversation?.conversationId) {
+          console.log('[useSSE] Team created by Dr. Sterling, refreshing conversation data');
+          // Invalidate conversation queries to refresh team data
+          queryClient.invalidateQueries([QueryKeys.conversation, submission.conversation.conversationId]);
+          queryClient.invalidateQueries([QueryKeys.conversation, submission.conversation.conversationId, 'team']);
+        }
         
         // Mark team collaboration as complete and reset after delay
         setTeamCollaboration((prev: TeamCollaborationState) => ({

@@ -8,8 +8,14 @@ const {
 } = require('~/server/middleware');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const { saveMessage } = require('~/models');
-const { DR_STERLING_AGENT_ID, orchestrateTeamResponse } = require('~/server/services/Teams');
-const { getTeamAgents, getTeamInfo } = require('~/models/Conversation');
+const { 
+  DR_STERLING_AGENT_ID, 
+  orchestrateTeamResponse,
+  parseTeamFromMarkdown,
+  convertParsedTeamToAgents,
+} = require('~/server/services/Teams');
+const { getTeamAgents, getTeamInfo, saveTeamAgents } = require('~/models/Conversation');
+const { getMessages } = require('~/models');
 
 function createCloseHandler(abortController) {
   return function (manual) {
@@ -250,17 +256,21 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
   const newConvo = !conversationId;
   const userId = req.user.id;
 
-  // Check if Dr. Sterling was activated by middleware
+  // Check if Dr. Sterling was activated by middleware OR if we're using Dr. Sterling agent
   const drSterlingActivated = req.drSterlingContext?.activated || false;
+  const drSterlingAgentUsed = req.body.agent_id === DR_STERLING_AGENT_ID ||
+                              endpointOption?.agent_id === DR_STERLING_AGENT_ID;
+  const isDrSterlingMode = drSterlingActivated || drSterlingAgentUsed;
   const userName = req.drSterlingContext?.userName || null;
   
-  if (drSterlingActivated) {
-    logger.info(`[AgentController] 🎩 Dr. Sterling mode active for user: ${userName}`);
+  if (isDrSterlingMode) {
+    logger.info(`[AgentController] 🎩 Dr. Sterling mode active (activated: ${drSterlingActivated}, agent: ${drSterlingAgentUsed})`);
   }
 
   // Check if this conversation has team agents and should use team orchestration
-  // Skip team mode if Dr. Sterling was explicitly activated
-  if (!drSterlingActivated && conversationId && conversationId !== Constants.NEW_CONVO) {
+  // Team takes priority - if team exists, use it (even in Dr. Sterling conversations)
+  // Only skip if this is the INITIAL Dr. Sterling activation (building the team)
+  if (conversationId && conversationId !== Constants.NEW_CONVO) {
     try {
       const teamInfo = await getTeamInfo(conversationId);
       if (teamInfo && teamInfo.teamAgents && teamInfo.teamAgents.length > 0) {
@@ -287,6 +297,11 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       logger.error('[AgentController] Error checking for team agents:', teamCheckError);
       // Continue with normal flow on error
     }
+  }
+  
+  // If we get here with Dr. Sterling mode, user is still building the team (no team yet)
+  if (isDrSterlingMode) {
+    logger.info(`[AgentController] 🎩 No team yet, continuing with Dr. Sterling for team building`);
   }
 
   // Create handler to avoid capturing the entire parent scope
@@ -472,6 +487,9 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     conversation.title =
       conversation && !conversation.title ? null : conversation?.title || 'New Chat';
 
+    // Get the final conversationId early for team creation detection
+    const finalConversationId = conversation.conversationId || conversationId;
+
     // Process files if needed
     if (req.body.files && client.options?.attachments) {
       userMessage.files = [];
@@ -484,11 +502,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
       delete userMessage.image_urls;
     }
 
-    // Get the final conversationId from conversation data (important for first message when conversationId was null)
-    const finalConversationId = conversation.conversationId || conversationId;
-    
-    // Team creation from Dr. Sterling's output is now handled via explicit user approval
-    // through the TeamIndicator component in the frontend, which calls /api/teams/:conversationId/parse
+    // Note: finalConversationId was already set above for team creation detection
     
     // Trigger team creation for PDF/document files if not already created
     // Use finalConversationId which is set even on first message
@@ -588,6 +602,124 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
     if (!abortController.signal.aborted) {
       // Create a new response object with minimal copies
       const finalResponse = { ...response };
+      
+      // Check if Dr. Sterling confirmed team creation
+      // Text might be in response.text OR extracted from response.content array
+      let responseText = finalResponse.text || '';
+      
+      // If text is empty, try to extract from content array (agents format)
+      if (!responseText && finalResponse.content && Array.isArray(finalResponse.content)) {
+        responseText = finalResponse.content
+          .filter(part => part && part.type === 'text')
+          .map(part => part.text?.value || part.text || '')
+          .join('');
+        logger.info(`[AgentController] Extracted text from content array: ${responseText.length} chars`);
+      }
+      
+      // Debug: log response structure
+      logger.info(`[AgentController] Response structure - text: ${(finalResponse.text || '').length}, content: ${finalResponse.content?.length || 0}, keys: ${Object.keys(finalResponse).join(',')}`);
+      
+      const teamConfirmed = isDrSterlingMode && responseText.includes('[TEAM_CONFIRMED]');
+      
+      logger.info(`[AgentController] Team confirmation check - isDrSterlingMode: ${isDrSterlingMode}, hasConfirmation: ${teamConfirmed}, textLength: ${responseText.length}`);
+      
+      // Clean the [TEAM_CONFIRMED] marker from the response text shown to user
+      if (teamConfirmed) {
+        // Clean marker from text property
+        if (finalResponse.text) {
+          finalResponse.text = finalResponse.text.replace(/\[TEAM_CONFIRMED\]/g, '').trim();
+        }
+        // Also clean from content array if present
+        if (finalResponse.content && Array.isArray(finalResponse.content)) {
+          finalResponse.content = finalResponse.content.map(part => {
+            if (part && part.type === 'text') {
+              if (typeof part.text === 'string') {
+                part.text = part.text.replace(/\[TEAM_CONFIRMED\]/g, '').trim();
+              } else if (part.text?.value) {
+                part.text.value = part.text.value.replace(/\[TEAM_CONFIRMED\]/g, '').trim();
+              }
+            }
+            return part;
+          });
+        }
+        logger.info(`[AgentController] 🎉 [TEAM_CONFIRMED] detected! Triggering team creation for conversation ${finalConversationId}`);
+        
+        // Trigger team creation in background with delay to ensure messages are saved
+        setTimeout(async () => {
+          try {
+            logger.info(`[AgentController] Starting team creation process for ${finalConversationId}...`);
+            
+            // Check if team already exists
+            const existingTeamAgents = await getTeamAgents(finalConversationId);
+            if (existingTeamAgents && existingTeamAgents.length > 0) {
+              logger.info(`[AgentController] Team already exists with ${existingTeamAgents.length} agents, skipping creation`);
+              return;
+            }
+
+            // Get conversation messages to find team specification
+            const conversationMessages = await getMessages({ conversationId: finalConversationId }, '-createdAt') || [];
+            logger.info(`[AgentController] Found ${conversationMessages.length} messages in conversation`);
+            
+            // Find the message with team specification (look for SUPERHUMAN TEAM patterns)
+            // Text might be in msg.text OR in msg.content array
+            let teamSpecContent = null;
+            for (const msg of conversationMessages) {
+              // Try text property first
+              let msgText = msg.text || '';
+              
+              // If text is empty, try to extract from content array
+              if (!msgText && msg.content && Array.isArray(msg.content)) {
+                msgText = msg.content
+                  .filter(part => part && part.type === 'text')
+                  .map(part => part.text?.value || part.text || '')
+                  .join('');
+              }
+              
+              if (msgText.includes('# SUPERHUMAN TEAM:') || 
+                  msgText.includes('## SUPERHUMAN SPECIFICATIONS') ||
+                  msgText.includes('SUPERHUMAN TEAM:') ||
+                  msgText.includes('## TEAM COMPOSITION')) {
+                teamSpecContent = msgText;
+                logger.info(`[AgentController] Found team spec in message ${msg.messageId} (${msgText.length} chars)`);
+                break;
+              }
+            }
+            
+            if (teamSpecContent) {
+              logger.info(`[AgentController] Parsing team from spec (${teamSpecContent.length} chars)...`);
+              const parsedTeam = parseTeamFromMarkdown(teamSpecContent);
+              logger.info(`[AgentController] Parsed team: ${parsedTeam ? parsedTeam.members?.length + ' members' : 'null'}`);
+              
+              if (parsedTeam && parsedTeam.members && parsedTeam.members.length > 0) {
+                const teamAgentsData = convertParsedTeamToAgents(parsedTeam, finalConversationId);
+                logger.info(`[AgentController] Converted to ${teamAgentsData.length} agents, saving...`);
+                await saveTeamAgents(finalConversationId, teamAgentsData, DR_STERLING_AGENT_ID, null);
+                
+                logger.info(`[AgentController] ✅ Team created with ${teamAgentsData.length} agents after Dr. Sterling confirmation`);
+              } else {
+                logger.warn('[AgentController] Team spec found but parsing failed - no members extracted');
+                logger.warn(`[AgentController] Parsed result: ${JSON.stringify(parsedTeam)}`);
+              }
+            } else {
+            logger.warn('[AgentController] [TEAM_CONFIRMED] found but no team spec in conversation history');
+            // Log ALL message summaries for debugging (extracting from content if needed)
+            conversationMessages.forEach((msg, i) => {
+              let msgText = msg.text || '';
+              if (!msgText && msg.content && Array.isArray(msg.content)) {
+                msgText = msg.content
+                  .filter(part => part && part.type === 'text')
+                  .map(part => part.text?.value || part.text || '')
+                  .join('');
+              }
+              const preview = msgText.substring(0, 300);
+              logger.warn(`[AgentController] Message ${i} (${msgText.length} chars): ${preview}...`);
+            });
+            }
+          } catch (teamError) {
+            logger.error('[AgentController] Error creating team after confirmation:', teamError);
+          }
+        }, 2000); // 2 second delay to ensure messages are saved to DB
+      }
 
       sendEvent(res, {
         final: true,
@@ -595,6 +727,7 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
         title: conversation.title,
         requestMessage: userMessage,
         responseMessage: finalResponse,
+        teamCreated: teamConfirmed, // Signal to frontend that team was created
       });
       res.end();
 

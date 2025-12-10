@@ -37,6 +37,17 @@ const TEAM_SPEC_PATTERNS = [
   '### Team Member',
 ];
 
+// Patterns that indicate team spec is still being generated (early markers)
+const TEAM_SPEC_EARLY_PATTERNS = [
+  'SUPERHUMAN',
+  'Team Composition',
+  'elite specialists',
+  'top 0.1%',
+  'Tier 3',
+  'Project Lead',
+];
+
+
 // Role to color mapping for avatars
 const getRoleColor = (role: string): string => {
   const colors: Record<string, string> = {
@@ -187,38 +198,38 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
       if (!msg.isCreatedByUser) {
         const text = extractMessageText(msg);
         if (containsTeamSpec(text)) {
-          return { message: msg, text };
+          return { message: msg, text, isComplete: !msg.unfinished };
         }
       }
     }
     return null;
   }, [messages, hasTeam]);
 
-  // Mutation to create team from markdown
-  const createTeamMutation = useMutation({
-    mutationFn: async (markdownContent: string) => {
-      return dataService.parseTeamFromMarkdown(conversationId!, markdownContent);
-    },
-    onSuccess: (data) => {
-      if (data.success) {
-        setShowSuccess(true);
-        // Invalidate conversation query to refresh team agents
-        queryClient.invalidateQueries([QueryKeys.conversation, conversationId]);
-        refetchConvo();
-        setTimeout(() => setShowSuccess(false), 5000);
-      }
-    },
-    onSettled: () => {
-      setIsCreating(false);
-    },
-  });
-
-  const handleCreateTeam = () => {
-    if (teamSpecMessage && conversationId) {
-      setIsCreating(true);
-      createTeamMutation.mutate(teamSpecMessage.text);
+  // Check if Dr. Sterling is currently generating a team spec (early detection)
+  const isGeneratingTeamSpec = useMemo(() => {
+    if (!messages || hasTeam) return false;
+    
+    // Check the latest message
+    const latestAssistantMsg = [...(messages || [])].reverse().find(m => !m.isCreatedByUser);
+    if (!latestAssistantMsg) return false;
+    
+    const text = extractMessageText(latestAssistantMsg);
+    
+    // If message is unfinished and contains early team spec patterns
+    if (latestAssistantMsg.unfinished) {
+      return TEAM_SPEC_EARLY_PATTERNS.some(pattern => 
+        text.toLowerCase().includes(pattern.toLowerCase())
+      );
     }
-  };
+    
+    return false;
+  }, [messages, hasTeam]);
+
+  // Check if team spec is complete and waiting for user confirmation
+  const awaitingConfirmation = useMemo(() => {
+    if (!teamSpecMessage?.isComplete || hasTeam) return false;
+    return true;
+  }, [teamSpecMessage, hasTeam]);
 
   // Show success animation when team is created
   useEffect(() => {
@@ -244,36 +255,33 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
 
   if (isNewConvo) return null;
 
-  // Show "Create Team" button if we detect a team spec but no team exists yet
-  if (!hasTeam && teamSpecMessage) {
+  // Show "Designing Team..." while Dr. Sterling is generating team spec
+  if (isGeneratingTeamSpec && !hasTeam) {
     return (
-      <button
-        type="button"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          handleCreateTeam();
-        }}
-        disabled={isCreating || createTeamMutation.isLoading}
-        className={`relative z-20 flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
-          isCreating || createTeamMutation.isLoading
-            ? 'bg-purple-500/20 text-purple-600 dark:text-purple-400'
-            : 'bg-gradient-to-r from-purple-500/20 to-blue-500/20 text-purple-600 hover:from-purple-500/30 hover:to-blue-500/30 hover:shadow-md dark:text-purple-400'
-        }`}
-        style={{ pointerEvents: 'auto' }}
-      >
-        {isCreating || createTeamMutation.isLoading ? (
-          <>
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            <span>Creating Team...</span>
-          </>
-        ) : (
-          <>
-            <Wand2 className="h-3.5 w-3.5" />
-            <span>Create Team</span>
-          </>
-        )}
-      </button>
+      <div className="flex items-center gap-1.5 rounded-md bg-gradient-to-r from-purple-500/20 to-blue-500/20 px-2.5 py-1 text-xs font-medium text-purple-600 dark:text-purple-400">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <span>Designing Team...</span>
+      </div>
+    );
+  }
+
+  // Show "Awaiting Confirmation" when team spec is complete but not yet confirmed
+  if (awaitingConfirmation && !hasTeam) {
+    return (
+      <div className="flex items-center gap-1.5 rounded-md bg-gradient-to-r from-amber-500/20 to-orange-500/20 px-2.5 py-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+        <Sparkles className="h-3.5 w-3.5" />
+        <span>Review Team</span>
+      </div>
+    );
+  }
+
+  // Show "Creating Team..." when team is being created (isCreating state)
+  if (isCreating && !hasTeam) {
+    return (
+      <div className="flex items-center gap-1.5 rounded-md bg-gradient-to-r from-green-500/20 to-emerald-500/20 px-2.5 py-1 text-xs font-medium text-green-600 dark:text-green-400">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <span>Creating Team...</span>
+      </div>
     );
   }
 
