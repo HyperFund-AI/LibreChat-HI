@@ -182,13 +182,15 @@ export default function TeamDocumentActions({
             className={cn('h-8 gap-1.5 px-2 text-xs', isSaved && 'text-green-500')}
             title="Save to team knowledge base"
           >
-            {saveToKnowledgeMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : isSaved ? (
-              <CheckCircle className="h-4 w-4" />
-            ) : (
-              <BookmarkPlus className="h-4 w-4" />
-            )}
+            {(() => {
+              if (saveToKnowledgeMutation.isPending) {
+                return <Loader2 className="h-4 w-4 animate-spin" />;
+              }
+              if (isSaved) {
+                return <CheckCircle className="h-4 w-4" />;
+              }
+              return <BookmarkPlus className="h-4 w-4" />;
+            })()}
             <span className="hidden sm:inline">{isSaved ? 'Saved!' : 'Save to KB'}</span>
           </Button>
         )}
