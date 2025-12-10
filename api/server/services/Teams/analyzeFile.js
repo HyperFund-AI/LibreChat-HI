@@ -111,7 +111,9 @@ Please analyze this document and return the JSON structure as specified above.`;
     // Validate each role has required fields
     for (const role of analysisResult.roles) {
       if (!role.role || !role.name || !role.instructions) {
-        throw new Error(`Invalid role structure: missing required fields in role ${JSON.stringify(role)}`);
+        throw new Error(
+          `Invalid role structure: missing required fields in role ${JSON.stringify(role)}`,
+        );
       }
     }
 
@@ -132,4 +134,3 @@ Please analyze this document and return the JSON structure as specified above.`;
 module.exports = {
   analyzeFile,
 };
-

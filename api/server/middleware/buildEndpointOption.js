@@ -88,24 +88,30 @@ async function buildEndpointOption(req, res, next) {
   try {
     const isAgents =
       isAgentsEndpoint(endpoint) || req.baseUrl.startsWith(EndpointURLs[EModelEndpoint.agents]);
-    
+
     // Check for Dr. Sterling activation phrase BEFORE building agent options
     // Note: canAccessAgentFromBody may have already activated Dr. Sterling, so check that first
     const userText = req.body.text || '';
     if (!req.drSterlingContext?.activated && DR_STERLING_ACTIVATION_PATTERN.test(userText)) {
       const nameMatch = userText.match(/^dr\.?\s*sterling,?\s*this\s+is\s+([^.!?\n]+)/i);
       const userName = nameMatch ? nameMatch[1].trim() : 'User';
-      
+
       logger.info(`[buildEndpointOption] 🎩 Dr. Sterling activation detected! User: ${userName}`);
-      
+
       // Ensure Dr. Sterling agent exists before we try to load it
       try {
         const { getDrSterlingAgent } = require('~/server/services/Teams');
         const drSterlingAgent = await getDrSterlingAgent(req.user.id);
         if (drSterlingAgent) {
-          logger.info(`[buildEndpointOption] 🎩 Dr. Sterling agent ready: id=${drSterlingAgent.id}, name=${drSterlingAgent.name}`);
-          logger.info(`[buildEndpointOption] 🎩 Instructions length: ${drSterlingAgent.instructions?.length || 0} characters`);
-          logger.debug(`[buildEndpointOption] 🎩 Instructions preview: ${drSterlingAgent.instructions?.substring(0, 100) || 'EMPTY'}...`);
+          logger.info(
+            `[buildEndpointOption] 🎩 Dr. Sterling agent ready: id=${drSterlingAgent.id}, name=${drSterlingAgent.name}`,
+          );
+          logger.info(
+            `[buildEndpointOption] 🎩 Instructions length: ${drSterlingAgent.instructions?.length || 0} characters`,
+          );
+          logger.debug(
+            `[buildEndpointOption] 🎩 Instructions preview: ${drSterlingAgent.instructions?.substring(0, 100) || 'EMPTY'}...`,
+          );
         } else {
           logger.error(`[buildEndpointOption] 🎩 getDrSterlingAgent returned null/undefined!`);
         }
@@ -113,42 +119,42 @@ async function buildEndpointOption(req, res, next) {
         logger.error(`[buildEndpointOption] 🎩 Error ensuring Dr. Sterling exists:`, sterlingError);
         // Continue anyway - the loadAgent will handle the error
       }
-      
+
       // Override agent_id to Dr. Sterling - this will be used by loadAgent
       req.body.agent_id = DR_STERLING_AGENT_ID;
       parsedBody.agent_id = DR_STERLING_AGENT_ID;
-      
+
       // IMPORTANT: Force the endpoint to 'agents' so that loadAgent uses our agent_id
       // Otherwise, buildOptions will use EPHEMERAL_AGENT_ID for non-agents endpoints
       req.body.endpoint = EModelEndpoint.agents;
       parsedBody.endpoint = EModelEndpoint.agents;
-      
+
       // Disable ephemeral agent tools (web search, etc.) when switching to Dr. Sterling
       if (req.body.ephemeralAgent) {
         req.body.ephemeralAgent.web_search = false;
         req.body.ephemeralAgent.file_search = false;
         req.body.ephemeralAgent.execute_code = false;
       }
-      
+
       // Store activation context for later use
       req.drSterlingContext = {
         activated: true,
         userName,
         activationPhrase: userText,
       };
-      
+
       logger.info(`[buildEndpointOption] 🎩 Agent ID set to: ${DR_STERLING_AGENT_ID}`);
       logger.info(`[buildEndpointOption] 🎩 Endpoint forced to: ${EModelEndpoint.agents}`);
     }
-    
+
     // Re-check isAgents after potential Dr. Sterling activation
     const finalIsAgents = req.drSterlingContext?.activated || isAgents;
     const finalEndpoint = req.drSterlingContext?.activated ? EModelEndpoint.agents : endpoint;
-    
+
     const builder = finalIsAgents
       ? (...args) => buildFunction[EModelEndpoint.agents](req, ...args)
       : buildFunction[endpointType ?? endpoint];
-    
+
     if (req.drSterlingContext?.activated) {
       logger.info(`[buildEndpointOption] 🎩 Using agents builder for Dr. Sterling`);
     }

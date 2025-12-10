@@ -5,7 +5,7 @@ const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
 
 /**
  * Team Orchestrator - Smart Collaboration Flow with Visible Progress
- * 
+ *
  * 1. Project Lead analyzes objective and selects relevant specialists
  * 2. Selected specialists contribute (visible collaboration)
  * 3. Project Lead synthesizes into ONE unified deliverable (streamed)
@@ -16,8 +16,11 @@ const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
  */
 const executeLeadAnalysis = async ({ lead, userMessage, apiKey, teamAgents, onThinking }) => {
   const specialistList = teamAgents
-    .filter(a => parseInt(a.tier) !== 3)
-    .map((a, i) => `${i + 1}. ${a.name} (${a.role}): ${a.expertise || a.responsibilities || 'Specialist'}`)
+    .filter((a) => parseInt(a.tier) !== 3)
+    .map(
+      (a, i) =>
+        `${i + 1}. ${a.name} (${a.role}): ${a.expertise || a.responsibilities || 'Specialist'}`,
+    )
     .join('\n');
 
   if (onThinking) {
@@ -51,7 +54,7 @@ Respond in this EXACT JSON format:
 Only select specialists whose expertise is genuinely needed.`;
 
   const client = new Anthropic({ apiKey });
-  
+
   const response = await client.messages.create({
     model: DEFAULT_ANTHROPIC_MODEL,
     max_tokens: 1000,
@@ -60,7 +63,7 @@ Only select specialists whose expertise is genuinely needed.`;
   });
 
   const responseText = response.content[0]?.text || '';
-  
+
   try {
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
@@ -77,11 +80,9 @@ Only select specialists whose expertise is genuinely needed.`;
   } catch (e) {
     logger.warn('[executeLeadAnalysis] Could not parse JSON');
   }
-  
-  const allIndices = teamAgents
-    .filter(a => parseInt(a.tier) !== 3)
-    .map((_, i) => i + 1);
-  
+
+  const allIndices = teamAgents.filter((a) => parseInt(a.tier) !== 3).map((_, i) => i + 1);
+
   return {
     analysis: responseText,
     selectedSpecialists: allIndices,
@@ -117,19 +118,21 @@ Guidelines:
 - Provide expert insights`;
 
   const client = new Anthropic({ apiKey });
-  
+
   const response = await client.messages.create({
     model: agent.model || DEFAULT_ANTHROPIC_MODEL,
     max_tokens: 1000,
     system: systemPrompt,
-    messages: [{
-      role: 'user',
-      content: `Objective: ${userMessage}\n\nYour Assignment: ${assignment || 'Provide your specialist analysis.'}`,
-    }],
+    messages: [
+      {
+        role: 'user',
+        content: `Objective: ${userMessage}\n\nYour Assignment: ${assignment || 'Provide your specialist analysis.'}`,
+      },
+    ],
   });
 
   const result = response.content[0]?.text || '';
-  
+
   if (onThinking) {
     onThinking({
       agent: agent.name,
@@ -145,17 +148,17 @@ Guidelines:
 /**
  * Phase 3: Lead synthesizes into final deliverable WITH STREAMING
  */
-const synthesizeDeliverableStreaming = async ({ 
-  lead, 
-  userMessage, 
-  specialistInputs, 
-  deliverableOutline, 
+const synthesizeDeliverableStreaming = async ({
+  lead,
+  userMessage,
+  specialistInputs,
+  deliverableOutline,
   apiKey,
   onThinking,
   onStream,
 }) => {
   const inputsSummary = specialistInputs
-    .map(s => `### ${s.name} (${s.role})\n${s.response}`)
+    .map((s) => `### ${s.name} (${s.role})\n${s.response}`)
     .join('\n\n---\n\n');
 
   if (onThinking) {
@@ -180,18 +183,20 @@ Create a UNIFIED document that:
 Do NOT just combine responses. Write as if one expert authored the entire document.`;
 
   const client = new Anthropic({ apiKey });
-  
+
   let fullText = '';
-  
+
   // Use streaming for the synthesis
   const stream = client.messages.stream({
     model: DEFAULT_ANTHROPIC_MODEL,
     max_tokens: 4000,
     system: systemPrompt,
-    messages: [{
-      role: 'user',
-      content: `# Objective\n${userMessage}\n\n# Deliverable Structure\n${deliverableOutline || 'Professional analysis document'}\n\n# Specialist Inputs\n\n${inputsSummary}\n\n---\n\nSynthesize into ONE unified deliverable document in Markdown format.`,
-    }],
+    messages: [
+      {
+        role: 'user',
+        content: `# Objective\n${userMessage}\n\n# Deliverable Structure\n${deliverableOutline || 'Professional analysis document'}\n\n# Specialist Inputs\n\n${inputsSummary}\n\n---\n\nSynthesize into ONE unified deliverable document in Markdown format.`,
+      },
+    ],
   });
 
   // Stream each chunk
@@ -246,14 +251,14 @@ const orchestrateTeamResponse = async ({
       enrichedMessage = `${userMessage}\n\n${knowledgeContext}`;
     }
 
-    const lead = teamAgents.find(a => parseInt(a.tier) === 3) || teamAgents[0];
-    const specialists = teamAgents.filter(a => parseInt(a.tier) !== 3 && parseInt(a.tier) !== 5);
-    
+    const lead = teamAgents.find((a) => parseInt(a.tier) === 3) || teamAgents[0];
+    const specialists = teamAgents.filter((a) => parseInt(a.tier) !== 3 && parseInt(a.tier) !== 5);
+
     const responses = [];
 
     // PHASE 1: Lead Analysis
     if (onAgentStart) onAgentStart(lead);
-    
+
     const workPlan = await executeLeadAnalysis({
       lead,
       userMessage: enrichedMessage,
@@ -262,28 +267,28 @@ const orchestrateTeamResponse = async ({
       onThinking,
     });
 
-    if (onAgentComplete) onAgentComplete({
-      agentName: lead.name,
-      agentRole: lead.role,
-      response: workPlan.analysis,
-    });
+    if (onAgentComplete)
+      onAgentComplete({
+        agentName: lead.name,
+        agentRole: lead.role,
+        response: workPlan.analysis,
+      });
 
     // PHASE 2: Execute Selected Specialists
     const selectedIndices = workPlan.selectedSpecialists || [];
-    const selectedSpecialists = selectedIndices
-      .map(idx => specialists[idx - 1])
-      .filter(Boolean);
+    const selectedSpecialists = selectedIndices.map((idx) => specialists[idx - 1]).filter(Boolean);
 
     logger.info(`[orchestrateTeamResponse] Selected ${selectedSpecialists.length} specialists`);
 
     const specialistInputs = [];
-    
+
     for (const specialist of selectedSpecialists) {
       if (onAgentStart) onAgentStart(specialist);
-      
+
       const idx = specialists.indexOf(specialist) + 1;
-      const assignment = workPlan.assignments?.[idx.toString()] || workPlan.assignments?.[idx] || '';
-      
+      const assignment =
+        workPlan.assignments?.[idx.toString()] || workPlan.assignments?.[idx] || '';
+
       const specialistResponse = await executeSpecialist({
         agent: specialist,
         assignment,
@@ -305,16 +310,17 @@ const orchestrateTeamResponse = async ({
         response: specialistResponse,
       });
 
-      if (onAgentComplete) onAgentComplete({
-        agentName: specialist.name,
-        agentRole: specialist.role,
-        response: specialistResponse,
-      });
+      if (onAgentComplete)
+        onAgentComplete({
+          agentName: specialist.name,
+          agentRole: specialist.role,
+          response: specialistResponse,
+        });
     }
 
     // PHASE 3: Synthesize with STREAMING
     if (onAgentStart) onAgentStart({ ...lead, phase: 'synthesis' });
-    
+
     const finalDeliverable = await synthesizeDeliverableStreaming({
       lead,
       userMessage,
@@ -327,7 +333,7 @@ const orchestrateTeamResponse = async ({
 
     // Add team credits
     const timestamp = new Date().toISOString().split('T')[0];
-    const teamCredits = `\n\n---\n\n_**Team:** ${lead.name} (Lead)${selectedSpecialists.length > 0 ? ', ' + selectedSpecialists.map(s => s.name).join(', ') : ''} | ${timestamp}_`;
+    const teamCredits = `\n\n---\n\n_**Team:** ${lead.name} (Lead)${selectedSpecialists.length > 0 ? ', ' + selectedSpecialists.map((s) => s.name).join(', ') : ''} | ${timestamp}_`;
 
     const formattedResponse = finalDeliverable + teamCredits;
 
@@ -336,16 +342,18 @@ const orchestrateTeamResponse = async ({
       onStream(teamCredits);
     }
 
-    logger.info(`[orchestrateTeamResponse] Completed with ${selectedSpecialists.length + 1} contributors`);
+    logger.info(
+      `[orchestrateTeamResponse] Completed with ${selectedSpecialists.length + 1} contributors`,
+    );
 
     return {
       success: true,
       responses,
       formattedResponse,
-      selectedAgents: [lead, ...selectedSpecialists].map(a => ({ 
-        id: a.agentId, 
-        name: a.name, 
-        role: a.role 
+      selectedAgents: [lead, ...selectedSpecialists].map((a) => ({
+        id: a.agentId,
+        name: a.name,
+        role: a.role,
       })),
       workPlan,
     };

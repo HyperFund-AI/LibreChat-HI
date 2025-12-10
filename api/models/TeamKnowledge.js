@@ -97,7 +97,9 @@ const saveToKnowledge = async ({
       { upsert: true, new: true },
     );
 
-    logger.info(`[TeamKnowledge] Saved document "${title}" to knowledge base for conversation ${conversationId}`);
+    logger.info(
+      `[TeamKnowledge] Saved document "${title}" to knowledge base for conversation ${conversationId}`,
+    );
     return doc;
   } catch (error) {
     logger.error('[TeamKnowledge] Error saving to knowledge base:', error);
@@ -112,9 +114,7 @@ const saveToKnowledge = async ({
  */
 const getKnowledge = async (conversationId) => {
   try {
-    const docs = await TeamKnowledge.find({ conversationId })
-      .sort({ createdAt: -1 })
-      .lean();
+    const docs = await TeamKnowledge.find({ conversationId }).sort({ createdAt: -1 }).lean();
     return docs;
   } catch (error) {
     logger.error('[TeamKnowledge] Error getting knowledge:', error);
@@ -160,7 +160,9 @@ const deleteKnowledgeDocument = async (documentId) => {
 const clearKnowledge = async (conversationId) => {
   try {
     const result = await TeamKnowledge.deleteMany({ conversationId });
-    logger.info(`[TeamKnowledge] Cleared ${result.deletedCount} documents from conversation ${conversationId}`);
+    logger.info(
+      `[TeamKnowledge] Cleared ${result.deletedCount} documents from conversation ${conversationId}`,
+    );
     return result.deletedCount;
   } catch (error) {
     logger.error('[TeamKnowledge] Error clearing knowledge:', error);
@@ -176,7 +178,7 @@ const clearKnowledge = async (conversationId) => {
 const getKnowledgeContext = async (conversationId) => {
   try {
     const docs = await getKnowledge(conversationId);
-    
+
     if (docs.length === 0) {
       return '';
     }
@@ -201,4 +203,3 @@ module.exports = {
   clearKnowledge,
   getKnowledgeContext,
 };
-

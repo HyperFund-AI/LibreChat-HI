@@ -12,7 +12,9 @@ const { DEFAULT_ANTHROPIC_MODEL } = require('./drSterlingAgent');
  */
 const extractTeamCompositionWithLLM = async (teamRelatedMessages, userId) => {
   try {
-    logger.info(`[extractTeamCompositionWithLLM] Extracting team from ${teamRelatedMessages.length} messages using LLM`);
+    logger.info(
+      `[extractTeamCompositionWithLLM] Extracting team from ${teamRelatedMessages.length} messages using LLM`,
+    );
 
     // Get Anthropic API key
     const { ANTHROPIC_API_KEY } = process.env;
@@ -27,14 +29,18 @@ const extractTeamCompositionWithLLM = async (teamRelatedMessages, userId) => {
 
     // Combine all team-related messages
     const combinedText = teamRelatedMessages
-      .map((msg, idx) => `--- Message ${idx + 1} (${new Date(msg.createdAt).toISOString()}) ---\n${msg.text}`)
+      .map(
+        (msg, idx) =>
+          `--- Message ${idx + 1} (${new Date(msg.createdAt).toISOString()}) ---\n${msg.text}`,
+      )
       .join('\n\n');
 
     // Limit text to avoid token limits (keep last 100000 characters - most recent is most important)
     const maxTextLength = 100000;
     const truncatedText =
       combinedText.length > maxTextLength
-        ? combinedText.substring(combinedText.length - maxTextLength) + '\n\n[Earlier content truncated...]'
+        ? combinedText.substring(combinedText.length - maxTextLength) +
+          '\n\n[Earlier content truncated...]'
         : combinedText;
 
     const systemPrompt = `You are an expert at extracting structured team information from Dr. Sterling's team specifications.
@@ -104,7 +110,10 @@ Return ONLY valid JSON, no markdown formatting or explanations.`;
       extractedTeam = JSON.parse(jsonText);
     } catch (parseError) {
       logger.error('[extractTeamCompositionWithLLM] Error parsing JSON response:', parseError);
-      logger.debug('[extractTeamCompositionWithLLM] Response text:', responseText.substring(0, 500));
+      logger.debug(
+        '[extractTeamCompositionWithLLM] Response text:',
+        responseText.substring(0, 500),
+      );
       throw new Error(`Failed to parse LLM extraction result: ${parseError.message}`);
     }
 
@@ -120,10 +129,14 @@ Return ONLY valid JSON, no markdown formatting or explanations.`;
     // Validate each member has required fields
     for (const member of extractedTeam.members) {
       if (!member.name || !member.role) {
-        throw new Error(`Invalid member structure: missing name or role in ${JSON.stringify(member)}`);
+        throw new Error(
+          `Invalid member structure: missing name or role in ${JSON.stringify(member)}`,
+        );
       }
       if (!member.instructions || member.instructions.trim().length < 100) {
-        logger.warn(`[extractTeamCompositionWithLLM] Member ${member.name} has short instructions (${member.instructions?.length || 0} chars), may be incomplete`);
+        logger.warn(
+          `[extractTeamCompositionWithLLM] Member ${member.name} has short instructions (${member.instructions?.length || 0} chars), may be incomplete`,
+        );
       }
     }
 
@@ -148,7 +161,7 @@ const validateAndEnhanceTeam = (extractedTeam, teamRelatedMessages) => {
   logger.info(`[validateAndEnhanceTeam] Validating ${extractedTeam.members.length} members`);
 
   // Combine messages for regex validation
-  const combinedText = teamRelatedMessages.map(msg => msg.text).join('\n\n');
+  const combinedText = teamRelatedMessages.map((msg) => msg.text).join('\n\n');
 
   // Count members mentioned in messages using regex as validation
   const memberNamePattern = /###\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/g;
@@ -161,20 +174,25 @@ const validateAndEnhanceTeam = (extractedTeam, teamRelatedMessages) => {
     }
   }
 
-  logger.info(`[validateAndEnhanceTeam] Found ${mentionedNames.size} unique member names in messages via regex`);
+  logger.info(
+    `[validateAndEnhanceTeam] Found ${mentionedNames.size} unique member names in messages via regex`,
+  );
 
   // Check if LLM missed any members
-  const extractedNames = new Set(extractedTeam.members.map(m => m.name));
-  const missingNames = Array.from(mentionedNames).filter(name => {
+  const extractedNames = new Set(extractedTeam.members.map((m) => m.name));
+  const missingNames = Array.from(mentionedNames).filter((name) => {
     // Fuzzy match - check if any extracted name contains or is contained in mentioned name
-    return !Array.from(extractedNames).some(extracted => 
-      name.toLowerCase().includes(extracted.toLowerCase()) ||
-      extracted.toLowerCase().includes(name.toLowerCase())
+    return !Array.from(extractedNames).some(
+      (extracted) =>
+        name.toLowerCase().includes(extracted.toLowerCase()) ||
+        extracted.toLowerCase().includes(name.toLowerCase()),
     );
   });
 
   if (missingNames.length > 0) {
-    logger.warn(`[validateAndEnhanceTeam] Potential missing members detected: ${missingNames.join(', ')}`);
+    logger.warn(
+      `[validateAndEnhanceTeam] Potential missing members detected: ${missingNames.join(', ')}`,
+    );
     logger.warn(`[validateAndEnhanceTeam] Extracted: ${Array.from(extractedNames).join(', ')}`);
   }
 
@@ -184,14 +202,16 @@ const validateAndEnhanceTeam = (extractedTeam, teamRelatedMessages) => {
     if (!member.instructions || member.instructions.length < 500) {
       const memberSpecPattern = new RegExp(
         `###\\s+${member.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?(?=###\\s+[A-Z]|##\\s+|$)`,
-        'i'
+        'i',
       );
-      
+
       for (const msg of teamRelatedMessages) {
         const specMatch = msg.text.match(memberSpecPattern);
         if (specMatch && specMatch[0].length > member.instructions?.length) {
           member.instructions = specMatch[0].trim();
-          logger.info(`[validateAndEnhanceTeam] Enhanced instructions for ${member.name} from ${member.instructions.length} to ${specMatch[0].length} chars`);
+          logger.info(
+            `[validateAndEnhanceTeam] Enhanced instructions for ${member.name} from ${member.instructions.length} to ${specMatch[0].length} chars`,
+          );
           break;
         }
       }
@@ -205,4 +225,3 @@ module.exports = {
   extractTeamCompositionWithLLM,
   validateAndEnhanceTeam,
 };
-
