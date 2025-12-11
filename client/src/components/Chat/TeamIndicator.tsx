@@ -434,9 +434,12 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                     <Sparkles className="h-6 w-6 text-white" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-white">{localize('com_ui_superhuman_team')}</h2>
+                    <h2 className="text-xl font-bold text-white">
+                      {localize('com_ui_superhuman_team')}
+                    </h2>
                     <p className="text-sm text-white/80">
-                      {teamAgents.length} {localize('com_ui_elite_specialists')} • {localize('com_ui_top_experts')}
+                      {teamAgents.length} {localize('com_ui_elite_specialists')} •{' '}
+                      {localize('com_ui_top_experts')}
                     </p>
                   </div>
                 </div>

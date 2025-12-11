@@ -16,22 +16,22 @@ async function checkDrSterling() {
       console.error('❌ MONGO_URI not set in .env');
       return;
     }
-    
+
     console.log('🔌 Connecting to MongoDB...');
     await mongoose.connect(mongoUri);
     console.log('✅ Connected to MongoDB');
-    
+
     // Get the Agent model
     const Agent = mongoose.model('Agent', require('./api/models/schema/agent'));
-    
+
     // Find Dr. Sterling
     const drSterling = await Agent.findOne({ id: 'dr_sterling_coordinator' }).lean();
-    
+
     if (!drSterling) {
       console.log('❌ Dr. Sterling agent NOT FOUND in database!');
       console.log('\n📋 All agents in database:');
       const allAgents = await Agent.find({}, { id: 1, name: 1 }).lean();
-      allAgents.forEach(a => console.log(`  - ${a.id}: ${a.name}`));
+      allAgents.forEach((a) => console.log(`  - ${a.id}: ${a.name}`));
     } else {
       console.log('✅ Dr. Sterling agent FOUND!');
       console.log('\n📋 Agent Details:');
@@ -49,7 +49,6 @@ async function checkDrSterling() {
         console.log('  ❌ NO INSTRUCTIONS SET!');
       }
     }
-    
   } catch (error) {
     console.error('❌ Error:', error);
   } finally {
@@ -59,4 +58,3 @@ async function checkDrSterling() {
 }
 
 checkDrSterling();
-

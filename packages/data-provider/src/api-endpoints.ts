@@ -241,7 +241,8 @@ export const fileDownload = (userId: string, fileId: string) =>
   `${BASE_URL}/api/files/download/${userId}/${fileId}`;
 export const fileConfig = () => `${BASE_URL}/api/files/config`;
 export const agentFiles = (agentId: string) => `${BASE_URL}/api/files/agent/${agentId}`;
-export const updateFileGlobalContext = (fileId: string) => `${BASE_URL}/api/files/${fileId}/global-context`;
+export const updateFileGlobalContext = (fileId: string) =>
+  `${BASE_URL}/api/files/${fileId}/global-context`;
 
 export const images = () => `${files()}/images`;
 
