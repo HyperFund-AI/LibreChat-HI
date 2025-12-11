@@ -1,6 +1,12 @@
 const { logger } = require('@librechat/data-schemas');
-const { EModelEndpoint } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  ResourceType,
+  PrincipalType,
+  AccessRoleIds,
+} = require('librechat-data-provider');
 const { createAgent, getAgent, updateAgent } = require('~/models/Agent');
+const { grantPermission } = require('~/server/services/PermissionService');
 const { COORDINATOR_SYSTEM_PROMPT } = require('./prompts');
 
 const DR_STERLING_AGENT_ID = 'dr_sterling_coordinator';
@@ -51,8 +57,51 @@ const getDrSterlingAgent = async (userId) => {
         author: userId,
       });
 
+      // Grant PUBLIC VIEW permissions so all users can access Dr. Sterling
+      // No individual ownership needed - it's a global shared agent
+      try {
+        await grantPermission({
+          principalType: PrincipalType.PUBLIC,
+          principalId: null,
+          resourceType: ResourceType.AGENT,
+          resourceId: drSterling._id,
+          accessRoleId: AccessRoleIds.AGENT_VIEWER,
+          grantedBy: userId,
+        });
+        logger.info(
+          `[getDrSterlingAgent] Granted PUBLIC VIEW permissions for Dr. Sterling agent ${drSterling.id}`,
+        );
+      } catch (permissionError) {
+        logger.error(
+          `[getDrSterlingAgent] Failed to grant PUBLIC VIEW permissions for Dr. Sterling agent ${drSterling.id}:`,
+          permissionError,
+        );
+        // Don't throw - agent was created successfully, permissions can be fixed later
+      }
+
       logger.info('[getDrSterlingAgent] Dr. Sterling agent created successfully');
     } else {
+      // Ensure PUBLIC VIEW permissions exist for existing agents
+      // This handles backward compatibility for agents created before permissions were set up
+      try {
+        await grantPermission({
+          principalType: PrincipalType.PUBLIC,
+          principalId: null,
+          resourceType: ResourceType.AGENT,
+          resourceId: drSterling._id,
+          accessRoleId: AccessRoleIds.AGENT_VIEWER,
+          grantedBy: userId,
+        });
+        logger.debug(
+          `[getDrSterlingAgent] Ensured PUBLIC VIEW permissions exist for Dr. Sterling agent ${drSterling.id}`,
+        );
+      } catch (permissionError) {
+        // Ignore errors - permissions might already exist or there might be a different issue
+        logger.debug(
+          `[getDrSterlingAgent] Could not ensure PUBLIC permissions (may already exist): ${permissionError.message}`,
+        );
+      }
+
       // Update agent if instructions or model_parameters have changed
       const needsUpdate =
         drSterling.instructions !== COORDINATOR_SYSTEM_PROMPT ||
