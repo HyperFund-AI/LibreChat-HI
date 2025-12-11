@@ -93,6 +93,48 @@ const getUserPluginAuthValue = async (userId, authField, throwError = true, plug
  */
 const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
   try {
+    // Validate CREDS_KEY is properly configured before attempting encryption
+    const credsKey = process.env.CREDS_KEY;
+    if (!credsKey) {
+      const error = new Error(
+        'CREDS_KEY environment variable is not set. Please set CREDS_KEY to a 64-character hex string (generate with: openssl rand -hex 32)',
+      );
+      logger.error('[updateUserPluginAuth]', error);
+      return error;
+    }
+
+    // Validate CREDS_KEY format and length
+    // Check if it's a valid hex string
+    if (!/^[0-9a-fA-F]+$/.test(credsKey)) {
+      const error = new Error(
+        'CREDS_KEY contains invalid characters. It must be a valid hex string (only 0-9, a-f, A-F). ' +
+          'Generate one with: openssl rand -hex 32',
+      );
+      logger.error('[updateUserPluginAuth]', error);
+      return error;
+    }
+
+    // Validate CREDS_KEY length (should be 64 hex characters = 32 bytes)
+    if (credsKey.length !== 64) {
+      const error = new Error(
+        `CREDS_KEY has invalid length: expected 64 hex characters (32 bytes), got ${credsKey.length} characters. ` +
+          'Please generate a new key with: openssl rand -hex 32',
+      );
+      logger.error('[updateUserPluginAuth]', error);
+      return error;
+    }
+
+    // Verify the hex string decodes to exactly 32 bytes
+    const keyBuffer = Buffer.from(credsKey, 'hex');
+    if (keyBuffer.length !== 32) {
+      const error = new Error(
+        `CREDS_KEY decodes to ${keyBuffer.length} bytes instead of 32 bytes. ` +
+          'This may indicate invalid hex encoding. Please generate a new key with: openssl rand -hex 32',
+      );
+      logger.error('[updateUserPluginAuth]', error);
+      return error;
+    }
+
     const encryptedValue = await encrypt(value);
     return await updatePluginAuth({
       userId,
@@ -101,6 +143,15 @@ const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
       value: encryptedValue,
     });
   } catch (err) {
+    // Check if it's the specific "Invalid key length" error from encryption
+    if (err.message && err.message.includes('Invalid key length')) {
+      const error = new Error(
+        'Encryption key configuration error: CREDS_KEY must be a 64-character hex string. ' +
+          'Generate one with: openssl rand -hex 32',
+      );
+      logger.error('[updateUserPluginAuth]', error);
+      return error;
+    }
     logger.error('[updateUserPluginAuth]', err);
     return err;
   }

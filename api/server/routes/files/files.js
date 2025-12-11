@@ -351,13 +351,23 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
 
       stream.pipe(res);
     } else {
+      logger.debug(
+        `[DOWNLOAD ROUTE] Attempting to download file: filepath=${file.filepath}, source=${file.source}`,
+      );
       const fileStream = await getDownloadStream(req, file.filepath);
 
       fileStream.on('error', (streamError) => {
         logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);
+        if (!res.headersSent) {
+          res.status(404).send('File not found');
+        }
       });
 
       setHeaders();
+      // Set correct content type for PDF
+      if (file.type === 'application/pdf') {
+        res.setHeader('Content-Type', 'application/pdf');
+      }
       fileStream.pipe(res);
     }
   } catch (error) {

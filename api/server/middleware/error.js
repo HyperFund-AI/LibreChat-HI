@@ -31,15 +31,17 @@ const sendError = async (req, res, options, callback) => {
     shouldSaveMessage,
     ...rest
   } = options;
+  // Ensure text is always a non-empty string
+  const errorText = text || 'An error occurred while processing your request. Please try again.';
   const errorMessage = {
-    sender,
+    sender: sender || 'System',
     messageId: messageId ?? crypto.randomUUID(),
-    conversationId,
-    parentMessageId,
+    conversationId: conversationId || '',
+    parentMessageId: parentMessageId || '',
     unfinished: false,
     error: true,
     final: true,
-    text,
+    text: errorText,
     isCreatedByUser: false,
     ...rest,
   };
@@ -88,15 +90,20 @@ const sendError = async (req, res, options, callback) => {
  * @param {string} [errorMessage] - The error message, if any.
  */
 const sendResponse = (req, res, data, errorMessage) => {
+  // Ensure errorMessage is always a non-empty string if provided
+  const errorText = errorMessage && typeof errorMessage === 'string' && errorMessage.trim()
+    ? errorMessage.trim()
+    : errorMessage || 'An error occurred while processing your request. Please try again.';
+
   if (!res.headersSent) {
     if (errorMessage) {
-      return res.status(500).json({ error: errorMessage });
+      return res.status(500).json({ error: errorText });
     }
     return res.json(data);
   }
 
   if (errorMessage) {
-    return sendError(req, res, { ...data, text: errorMessage });
+    return sendError(req, res, { ...data, text: errorText });
   }
   return sendEvent(res, data);
 };

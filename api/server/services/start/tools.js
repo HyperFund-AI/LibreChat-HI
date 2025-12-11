@@ -76,8 +76,16 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
       continue;
     }
 
-    const formattedTool = formatToOpenAIAssistantTool(toolInstance);
-    tools.push(formattedTool);
+    try {
+      const formattedTool = formatToOpenAIAssistantTool(toolInstance);
+      tools.push(formattedTool);
+    } catch (error) {
+      logger.error(
+        `[loadAndFormatTools] Error formatting \`${file}\` tool (${toolInstance.name}):`,
+        error,
+      );
+      continue;
+    }
   }
 
   const basicToolInstances = [

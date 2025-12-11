@@ -4,15 +4,61 @@ import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-pro
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Image from '~/components/Chat/Messages/Content/Image';
 import { useAttachmentLink } from './LogLink';
+import { useFileDownload } from '~/data-provider';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
+import { useToastContext } from '@librechat/client';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
   const [isVisible, setIsVisible] = useState(false);
-  const { handleDownload } = useAttachmentLink({
+  const user = useRecoilValue(store.user);
+  const { showToast } = useToastContext();
+  const localize = useLocalize();
+  const extension = attachment.filename?.split('.').pop();
+
+  // Use file_id for download if available (for regular files), otherwise use filepath (for code outputs)
+  const file_id = (attachment as TFile)?.file_id;
+  const { refetch: downloadFile } = useFileDownload(user?.id ?? '', file_id);
+  const { handleDownload: handleCodeDownload } = useAttachmentLink({
     href: attachment.filepath ?? '',
     filename: attachment.filename ?? '',
   });
-  const extension = attachment.filename?.split('.').pop();
+
+  const handleDownload = async (event: React.MouseEvent) => {
+    event.preventDefault();
+    // If we have a file_id, use the regular file download endpoint
+    if (file_id) {
+      try {
+        const stream = await downloadFile();
+        if (stream.data == null || stream.data === '') {
+          console.error('Error downloading file: No data found');
+          showToast({
+            status: 'error',
+            message: localize('com_ui_download_error'),
+          });
+          return;
+        }
+        const link = document.createElement('a');
+        link.href = stream.data;
+        link.setAttribute('download', attachment.filename ?? 'file');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(stream.data);
+      } catch (error) {
+        console.error('Error downloading file:', error);
+        showToast({
+          status: 'error',
+          message: localize('com_ui_download_error'),
+        });
+      }
+    } else {
+      // Fallback to code output download for code interpreter files
+      handleCodeDownload(event);
+    }
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => setIsVisible(true), 50);
