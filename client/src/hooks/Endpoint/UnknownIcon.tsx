@@ -70,7 +70,7 @@ function UnknownIcon({
   const { user } = useAuthContext();
   const isAdmin = user?.role === SystemRoles.ADMIN;
   const endpoint = _endpoint ?? '';
-  
+
   if (!endpoint) {
     return <CustomMinimalIcon className={className} />;
   }

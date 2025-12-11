@@ -1035,7 +1035,9 @@ export function parseTeamFromMarkdown(
   return request.post(endpoints.teamParse(conversationId), { markdownContent });
 }
 
-export function clearTeamAgents(conversationId: string): Promise<{ success: boolean; message: string }> {
+export function clearTeamAgents(
+  conversationId: string,
+): Promise<{ success: boolean; message: string }> {
   return request.delete(endpoints.teamByConversation(conversationId));
 }
 

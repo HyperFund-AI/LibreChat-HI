@@ -744,7 +744,9 @@ class AnthropicClient extends BaseClient {
       modelOptions.stream = true;
     }
 
-    logger.warn(`[ANTHROPIC CLIENT] Model: ${modelOptions.model} | Endpoint: ${this.options.endpoint}`);
+    logger.warn(
+      `[ANTHROPIC CLIENT] Model: ${modelOptions.model} | Endpoint: ${this.options.endpoint}`,
+    );
     const metadata = {
       user_id: this.user,
     };

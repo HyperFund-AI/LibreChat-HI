@@ -25,7 +25,8 @@ const createCoordinatorAgent = async (userId) => {
     const agentData = {
       id: COORDINATOR_AGENT_ID,
       name: 'Team Coordinator',
-      description: 'Coordinates team creation by analyzing documents and identifying required professional roles',
+      description:
+        'Coordinates team creation by analyzing documents and identifying required professional roles',
       instructions: COORDINATOR_SYSTEM_PROMPT,
       provider: EModelEndpoint.anthropic,
       model: DEFAULT_ANTHROPIC_MODEL,
@@ -67,4 +68,3 @@ module.exports = {
   COORDINATOR_AGENT_ID,
   DEFAULT_ANTHROPIC_MODEL,
 };
-

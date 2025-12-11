@@ -450,9 +450,7 @@ The team is ready to begin work on your objectives. Simply describe what you nee
 
 IMPORTANT: Only include [TEAM_CONFIRMED] when the user has explicitly approved the team after reviewing the full specification. Never include it during the discovery phase or team generation phase.`;
 
-
 module.exports = {
   FILE_ANALYSIS_PROMPT,
   COORDINATOR_SYSTEM_PROMPT,
 };
-

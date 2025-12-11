@@ -11,9 +11,16 @@ const { DEFAULT_ANTHROPIC_MODEL } = require('./createCoordinatorAgent');
  * @param {string} params.model - Model to use (default: DEFAULT_ANTHROPIC_MODEL)
  * @returns {Array} Array of team agent configurations
  */
-const createTeamAgents = async ({ conversationId, roles, provider = EModelEndpoint.anthropic, model = DEFAULT_ANTHROPIC_MODEL }) => {
+const createTeamAgents = async ({
+  conversationId,
+  roles,
+  provider = EModelEndpoint.anthropic,
+  model = DEFAULT_ANTHROPIC_MODEL,
+}) => {
   try {
-    logger.debug(`[createTeamAgents] Creating ${roles.length} team agents for conversation ${conversationId}`);
+    logger.debug(
+      `[createTeamAgents] Creating ${roles.length} team agents for conversation ${conversationId}`,
+    );
 
     const teamAgents = roles.map((role, index) => {
       const timestamp = Date.now();
@@ -78,4 +85,3 @@ module.exports = {
   createTeamAgents,
   createTeamEdges,
 };
-

@@ -55,9 +55,10 @@ export default function ConvoIcon({
 
   // For regular users, replace model provider icons with HyperAI logo
   // Exclude assistants and agents as they have custom avatars
-  const shouldUseHyperAILogo = !isAdmin && 
-    endpoint !== EModelEndpoint.assistants && 
-    endpoint !== EModelEndpoint.azureAssistants && 
+  const shouldUseHyperAILogo =
+    !isAdmin &&
+    endpoint !== EModelEndpoint.assistants &&
+    endpoint !== EModelEndpoint.azureAssistants &&
     endpoint !== EModelEndpoint.agents &&
     !iconURL.includes('http');
 
@@ -76,9 +77,18 @@ export default function ConvoIcon({
         />
       ) : (
         <div className={containerClassName}>
-          {endpoint && Icon != null && (
-            shouldUseHyperAILogo ? (
-              <div style={{ width: size, height: size, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {endpoint &&
+            Icon != null &&
+            (shouldUseHyperAILogo ? (
+              <div
+                style={{
+                  width: size,
+                  height: size,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
                 {getHyperAILogo(size ?? 41)}
               </div>
             ) : (
@@ -92,8 +102,7 @@ export default function ConvoIcon({
                 agentName={name}
                 avatar={avatar}
               />
-            )
-          )}
+            ))}
         </div>
       )}
     </>

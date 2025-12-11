@@ -1,6 +1,11 @@
 import { memo } from 'react';
 import { Feather } from 'lucide-react';
-import { EModelEndpoint, isAssistantsEndpoint, alternateName, SystemRoles } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  isAssistantsEndpoint,
+  alternateName,
+  SystemRoles,
+} from 'librechat-data-provider';
 import {
   Plugin,
   GPTIcon,
@@ -198,7 +203,12 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
 
   // For regular users, replace all model provider icons with HyperAI logo
   // Exclude assistants and agents as they have custom avatars
-  if (!isAdmin && endpoint !== EModelEndpoint.assistants && endpoint !== EModelEndpoint.azureAssistants && endpoint !== EModelEndpoint.agents) {
+  if (
+    !isAdmin &&
+    endpoint !== EModelEndpoint.assistants &&
+    endpoint !== EModelEndpoint.azureAssistants &&
+    endpoint !== EModelEndpoint.agents
+  ) {
     icon = getHyperAILogo(size);
     bg = 'transparent';
     name = 'HyperAI';

@@ -32,4 +32,3 @@ export const teamCollaborationAtom = atom<TeamCollaborationState>({
 
 // Helper to reset the state
 export const resetTeamCollaboration = (): TeamCollaborationState => defaultState;
-

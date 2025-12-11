@@ -179,7 +179,7 @@ export const getDisplayValue = ({
   // This function is called from ModelSelectorContent which has access to auth context
   // We'll handle the admin check in the component that calls this
   // For now, return the original value - we'll modify the component to hide it for regular users
-  
+
   if (selectedValues.modelSpec) {
     const spec = modelSpecs.find((s) => s.name === selectedValues.modelSpec);
     return spec?.label || spec?.name || localize('com_ui_select_model');

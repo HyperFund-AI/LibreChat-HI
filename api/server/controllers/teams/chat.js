@@ -7,7 +7,7 @@ const { orchestrateTeamResponse } = require('~/server/services/Teams');
 
 /**
  * Team Chat Controller - Handles conversations with team collaboration
- * 
+ *
  * When a conversation has team agents, this controller orchestrates
  * the team response instead of using a single agent.
  */
@@ -48,7 +48,7 @@ const teamChatController = async (req, res) => {
     // Generate IDs
     const userMessageId = uuidv4();
     const responseMessageId = uuidv4();
-    
+
     if (isNewConvo) {
       conversationId = uuidv4();
     }
@@ -156,7 +156,7 @@ const teamChatController = async (req, res) => {
       ],
       // Store individual agent responses in metadata
       metadata: {
-        teamResponses: orchestrationResult.responses.map(r => ({
+        teamResponses: orchestrationResult.responses.map((r) => ({
           agentId: r.agentId,
           agentName: r.agentName,
           agentRole: r.agentRole,
@@ -194,17 +194,17 @@ const teamChatController = async (req, res) => {
     logger.info(`[teamChatController] Team chat completed successfully`);
   } catch (error) {
     logger.error('[teamChatController] Error:', error);
-    
+
     if (!res.headersSent) {
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
     }
-    
+
     sendSSE(res, {
       error: true,
       message: error.message || 'An error occurred during team collaboration',
     });
-    
+
     res.end();
   }
 };
@@ -218,7 +218,7 @@ const shouldUseTeamChat = async (conversationId) => {
   if (!conversationId || conversationId === Constants.NEW_CONVO) {
     return false;
   }
-  
+
   const teamAgents = await getTeamAgents(conversationId);
   return teamAgents && teamAgents.length > 0;
 };
@@ -227,4 +227,3 @@ module.exports = {
   teamChatController,
   shouldUseTeamChat,
 };
-

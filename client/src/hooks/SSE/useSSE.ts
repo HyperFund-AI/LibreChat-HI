@@ -129,17 +129,24 @@ export default function useSSE(
       if (data.final != null) {
         clearDraft(submission.conversation?.conversationId);
         const { plugins, teamCreated } = data;
-        
+
         // If team was created by Dr. Sterling, invalidate conversation to refresh team data
         if (teamCreated && submission.conversation?.conversationId) {
           console.log('[useSSE] Team created by Dr. Sterling, refreshing conversation data');
           // Invalidate conversation queries to refresh team data
-          queryClient.invalidateQueries([QueryKeys.conversation, submission.conversation.conversationId]);
-          queryClient.invalidateQueries([QueryKeys.conversation, submission.conversation.conversationId, 'team']);
+          queryClient.invalidateQueries([
+            QueryKeys.conversation,
+            submission.conversation.conversationId,
+          ]);
+          queryClient.invalidateQueries([
+            QueryKeys.conversation,
+            submission.conversation.conversationId,
+            'team',
+          ]);
           // Clear team approval loading state
           setIsTeamApprovalLoading(false);
         }
-        
+
         // Mark team collaboration as complete and reset after delay
         setTeamCollaboration((prev: TeamCollaborationState) => ({
           ...prev,
@@ -155,7 +162,7 @@ export default function useSSE(
             phase: 'idle',
           });
         }, 3000);
-        
+
         try {
           finalHandler(data, { ...submission, plugins } as EventSubmission);
         } catch (error) {
@@ -180,10 +187,14 @@ export default function useSSE(
         createdHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.event != null) {
         // Handle team collaboration events
-        if (data.event === 'on_thinking' || data.event === 'on_agent_start' || data.event === 'on_agent_complete') {
+        if (
+          data.event === 'on_thinking' ||
+          data.event === 'on_agent_start' ||
+          data.event === 'on_agent_complete'
+        ) {
           const eventData = data.data || {};
           const conversationId = submission?.conversation?.conversationId || '';
-          
+
           setTeamCollaboration((prev: TeamCollaborationState) => {
             // Determine phase based on event
             let phase = prev.phase;
@@ -203,8 +214,11 @@ export default function useSSE(
               id: v4(),
               agent: eventData.agent || eventData.agentName || 'Team',
               role: eventData.role || eventData.agentRole || '',
-              action: eventData.action || (data.event === 'on_agent_start' ? 'working' : 'completed'),
-              message: eventData.message || `${eventData.agentName || 'Agent'} ${data.event === 'on_agent_start' ? 'started working' : 'finished'}`,
+              action:
+                eventData.action || (data.event === 'on_agent_start' ? 'working' : 'completed'),
+              message:
+                eventData.message ||
+                `${eventData.agentName || 'Agent'} ${data.event === 'on_agent_start' ? 'started working' : 'finished'}`,
               timestamp: Date.now(),
             };
 
@@ -222,7 +236,7 @@ export default function useSSE(
       } else if (data.sync != null) {
         const runId = v4();
         setActiveRunId(runId);
-        
+
         // Reset team collaboration state for new response
         setTeamCollaboration({
           isActive: false,
@@ -231,7 +245,7 @@ export default function useSSE(
           currentAgent: null,
           phase: 'idle',
         });
-        
+
         /* synchronize messages to Assistants API as well as with real DB ID's */
         syncHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.type != null) {

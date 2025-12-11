@@ -1,14 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import copy from 'copy-to-clipboard';
 import { useParams } from 'react-router-dom';
-import {
-  Copy,
-  Download,
-  BookmarkPlus,
-  CheckCircle,
-  FileText,
-  Loader2,
-} from 'lucide-react';
+import { Copy, Download, BookmarkPlus, CheckCircle, FileText, Loader2 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService } from 'librechat-data-provider';
 import { Button, useToastContext } from '@librechat/client';
@@ -62,7 +55,7 @@ export default function TeamDocumentActions({
   const saveToKnowledgeMutation = useMutation({
     mutationFn: async () => {
       if (!conversationId) throw new Error('No conversation ID');
-      
+
       const title = extractTitle(content);
       return dataService.saveToTeamKnowledge(conversationId, {
         title,
@@ -104,7 +97,7 @@ export default function TeamDocumentActions({
   const handleDownload = useCallback(() => {
     const title = extractTitle(content);
     const filename = `${title.replace(/[^a-z0-9]/gi, '_').substring(0, 50)}.md`;
-    
+
     const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -114,7 +107,7 @@ export default function TeamDocumentActions({
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    
+
     showToast({
       message: `Downloaded ${filename}`,
       status: 'success',
@@ -146,8 +139,10 @@ export default function TeamDocumentActions({
       )}
     >
       <FileText className="h-4 w-4 text-text-secondary" />
-      <span className="text-xs font-medium text-text-secondary">Team Document</span>
-      
+      <span className="text-xs font-medium text-text-secondary">
+        {localize('com_ui_team_document')}
+      </span>
+
       <div className="ml-auto flex items-center gap-1">
         {/* Copy Button */}
         <Button
@@ -163,7 +158,7 @@ export default function TeamDocumentActions({
             <Copy className="h-4 w-4" />
           )}
           <span className="hidden sm:inline">
-            {isCopied ? 'Copied!' : 'Copy'}
+            {isCopied ? localize('com_ui_copied') : localize('com_ui_copy_to_clipboard')}
           </span>
         </Button>
 
@@ -176,7 +171,7 @@ export default function TeamDocumentActions({
           title="Download as Markdown file"
         >
           <Download className="h-4 w-4" />
-          <span className="hidden sm:inline">Download</span>
+          <span className="hidden sm:inline">{localize('com_ui_download')}</span>
         </Button>
 
         {/* Save to Knowledge Button */}
@@ -186,10 +181,7 @@ export default function TeamDocumentActions({
             variant="ghost"
             onClick={handleSaveToKnowledge}
             disabled={saveToKnowledgeMutation.isPending || isSaved}
-            className={cn(
-              'h-8 gap-1.5 px-2 text-xs',
-              isSaved && 'text-green-500',
-            )}
+            className={cn('h-8 gap-1.5 px-2 text-xs', isSaved && 'text-green-500')}
             title="Save to team knowledge base"
           >
             {saveToKnowledgeMutation.isPending ? (
@@ -200,7 +192,7 @@ export default function TeamDocumentActions({
               <BookmarkPlus className="h-4 w-4" />
             )}
             <span className="hidden sm:inline">
-              {isSaved ? 'Saved!' : 'Save to KB'}
+              {isSaved ? localize('com_ui_saved') : localize('com_ui_save_to_knowledge')}
             </span>
           </Button>
         )}
@@ -208,4 +200,3 @@ export default function TeamDocumentActions({
     </div>
   );
 }
-
