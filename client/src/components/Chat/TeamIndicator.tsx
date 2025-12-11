@@ -535,7 +535,8 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                         {selectedAgent.behavioralLevel &&
                           selectedAgent.behavioralLevel !== 'NONE' && (
                             <p className="mt-1 text-sm text-purple-600 dark:text-purple-400">
-                              {localize('com_ui_behavioral_science')}: {selectedAgent.behavioralLevel}
+                              {localize('com_ui_behavioral_science')}:{' '}
+                              {selectedAgent.behavioralLevel}
                             </p>
                           )}
                       </div>
