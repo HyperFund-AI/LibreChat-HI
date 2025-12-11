@@ -3,6 +3,13 @@ const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 
+// Mock compression module to avoid missing compressible dependency
+jest.mock('compression', () => {
+  return jest.fn(() => (req, res, next) => next());
+});
+
+// @node-saml/passport-saml is mocked via __mocks__/@node-saml/passport-saml.js
+
 jest.mock('~/server/services/Config', () => ({
   loadCustomConfig: jest.fn(() => Promise.resolve({})),
   getAppConfig: jest.fn().mockResolvedValue({

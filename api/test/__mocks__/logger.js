@@ -26,19 +26,7 @@ jest.mock('winston', () => {
   };
 });
 
-jest.mock('winston-daily-rotate-file', () => {
-  return jest.fn().mockImplementation(() => {
-    return {
-      level: 'error',
-      filename: '../logs/error-%DATE%.log',
-      datePattern: 'YYYY-MM-DD',
-      zippedArchive: true,
-      maxSize: '20m',
-      maxFiles: '14d',
-      format: 'format',
-    };
-  });
-});
+// winston-daily-rotate-file is mocked via __mocks__/winston-daily-rotate-file.js
 
 jest.mock('~/config', () => {
   return {

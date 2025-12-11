@@ -66,21 +66,14 @@ jest.mock('openid-client', () => {
 jest.mock('openid-client/passport', () => {
   let verifyCallback;
   const mockStrategy = jest.fn((options, verify) => {
-    if (verify && typeof verify === 'function') {
-      verifyCallback = verify;
-    }
+    verifyCallback = verify;
     return { name: 'openid', options, verify };
   });
 
-  const moduleExports = {
+  return {
     Strategy: mockStrategy,
     __getVerifyCallback: () => verifyCallback,
   };
-
-  // Support both CommonJS and ESM exports
-  moduleExports.default = moduleExports;
-
-  return moduleExports;
 });
 
 // Mock passport
@@ -92,28 +85,9 @@ describe('setupOpenId', () => {
   // Store a reference to the verify callback once it's set up
   let verifyCallback;
 
-  // Helper to setup OpenID and capture verifyCallback
-  const setupOpenIdAndCaptureCallback = async () => {
-    await setupOpenIdAndCaptureCallback();
-    if (!verifyCallback || typeof verifyCallback !== 'function') {
-      throw new Error(
-        'verifyCallback was not captured. The mock may not be working correctly with dynamic imports.',
-      );
-    }
-    return verifyCallback;
-  };
-
   // Helper to wrap the verify callback in a promise
   const validate = (tokenset) =>
     new Promise((resolve, reject) => {
-      if (!verifyCallback || typeof verifyCallback !== 'function') {
-        reject(
-          new Error(
-            'verifyCallback is not a function. Make sure setupOpenId() was called and the mock is properly configured.',
-          ),
-        );
-        return;
-      }
       verifyCallback(tokenset, (err, user, details) => {
         if (err) {
           reject(err);
@@ -186,7 +160,8 @@ describe('setupOpenId', () => {
     fetch.mockResolvedValue(fakeResponse);
 
     // Call the setup function and capture the verify callback
-    await setupOpenIdAndCaptureCallback();
+    await setupOpenId();
+    verifyCallback = require('openid-client/passport').__getVerifyCallback();
   });
 
   it('should create a new user with correct username when preferred_username claim exists', async () => {
@@ -413,7 +388,8 @@ describe('setupOpenId', () => {
   it('should support comma-separated multiple roles', async () => {
     // Arrange
     process.env.OPENID_REQUIRED_ROLE = 'someRole,anotherRole,admin';
-    await setupOpenIdAndCaptureCallback(); // Re-initialize the strategy
+    await setupOpenId(); // Re-initialize the strategy
+    verifyCallback = require('openid-client/passport').__getVerifyCallback();
     jwtDecode.mockReturnValue({
       roles: ['anotherRole', 'aThirdRole'],
     });
@@ -429,7 +405,8 @@ describe('setupOpenId', () => {
   it('should reject login when user has none of the required multiple roles', async () => {
     // Arrange
     process.env.OPENID_REQUIRED_ROLE = 'someRole,anotherRole,admin';
-    await setupOpenIdAndCaptureCallback(); // Re-initialize the strategy
+    await setupOpenId(); // Re-initialize the strategy
+    verifyCallback = require('openid-client/passport').__getVerifyCallback();
     jwtDecode.mockReturnValue({
       roles: ['aThirdRole', 'aFourthRole'],
     });
@@ -447,7 +424,8 @@ describe('setupOpenId', () => {
   it('should handle spaces in comma-separated roles', async () => {
     // Arrange
     process.env.OPENID_REQUIRED_ROLE = ' someRole , anotherRole , admin ';
-    await setupOpenIdAndCaptureCallback(); // Re-initialize the strategy
+    await setupOpenId(); // Re-initialize the strategy
+    verifyCallback = require('openid-client/passport').__getVerifyCallback();
     jwtDecode.mockReturnValue({
       roles: ['someRole'],
     });
@@ -463,10 +441,9 @@ describe('setupOpenId', () => {
     const OpenIDStrategy = require('openid-client/passport').Strategy;
 
     delete process.env.OPENID_USE_PKCE;
-    await setupOpenIdAndCaptureCallback();
+    await setupOpenId();
 
-    const callOptions = OpenIDStrategy.mock.calls[OpenIDStrategy.mock.calls.length - 1]?.[0];
-    expect(callOptions).toBeDefined();
+    const callOptions = OpenIDStrategy.mock.calls[OpenIDStrategy.mock.calls.length - 1][0];
     expect(callOptions.usePKCE).toBe(false);
     expect(callOptions.params?.code_challenge_method).toBeUndefined();
   });
@@ -582,7 +559,8 @@ describe('setupOpenId', () => {
     delete process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH;
     delete process.env.OPENID_ADMIN_ROLE_TOKEN_KIND;
 
-    await setupOpenIdAndCaptureCallback();
+    await setupOpenId();
+    verifyCallback = require('openid-client/passport').__getVerifyCallback();
 
     // Simulate an existing admin user
     const existingAdminUser = {
