@@ -6,6 +6,9 @@ import { createShareMethods, type ShareMethods } from './share';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
 
+// Mock winston-daily-rotate-file before winston config is loaded
+jest.mock('winston-daily-rotate-file');
+
 describe('Share Methods', () => {
   let mongoServer: MongoMemoryServer;
   let shareMethods: ShareMethods;
