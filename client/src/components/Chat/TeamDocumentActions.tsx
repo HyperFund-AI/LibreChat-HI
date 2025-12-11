@@ -139,7 +139,9 @@ export default function TeamDocumentActions({
       )}
     >
       <FileText className="h-4 w-4 text-text-secondary" />
-      <span className="text-xs font-medium text-text-secondary">{localize('com_ui_team_document')}</span>
+      <span className="text-xs font-medium text-text-secondary">
+        {localize('com_ui_team_document')}
+      </span>
 
       <div className="ml-auto flex items-center gap-1">
         {/* Copy Button */}
@@ -155,7 +157,9 @@ export default function TeamDocumentActions({
           ) : (
             <Copy className="h-4 w-4" />
           )}
-          <span className="hidden sm:inline">{isCopied ? localize('com_ui_copied') : localize('com_ui_copy_to_clipboard')}</span>
+          <span className="hidden sm:inline">
+            {isCopied ? localize('com_ui_copied') : localize('com_ui_copy_to_clipboard')}
+          </span>
         </Button>
 
         {/* Download Button */}
@@ -187,7 +191,9 @@ export default function TeamDocumentActions({
             ) : (
               <BookmarkPlus className="h-4 w-4" />
             )}
-            <span className="hidden sm:inline">{isSaved ? localize('com_ui_saved') : localize('com_ui_save_to_knowledge')}</span>
+            <span className="hidden sm:inline">
+              {isSaved ? localize('com_ui_saved') : localize('com_ui_save_to_knowledge')}
+            </span>
           </Button>
         )}
       </div>

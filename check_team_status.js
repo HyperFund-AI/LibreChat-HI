@@ -8,12 +8,10 @@ async function checkTeamStatus() {
     console.log('Connected to MongoDB\n');
 
     const Conversation = mongoose.model('Conversation', new mongoose.Schema({}, { strict: false }));
-    
+
     // Get most recent conversation
-    const recentConvo = await Conversation.findOne()
-      .sort({ updatedAt: -1 })
-      .lean();
-    
+    const recentConvo = await Conversation.findOne().sort({ updatedAt: -1 }).lean();
+
     if (!recentConvo) {
       console.log('❌ No conversations found');
       return;
@@ -24,7 +22,7 @@ async function checkTeamStatus() {
     console.log(`   Endpoint: ${recentConvo.endpoint || 'N/A'}`);
     console.log(`   Updated: ${recentConvo.updatedAt}`);
     console.log(`   Files: ${recentConvo.files?.length || 0}`);
-    
+
     if (recentConvo.teamAgents && recentConvo.teamAgents.length > 0) {
       console.log(`\n✅ Team Agents Found: ${recentConvo.teamAgents.length}`);
       recentConvo.teamAgents.forEach((agent, i) => {
@@ -51,4 +49,3 @@ async function checkTeamStatus() {
 }
 
 checkTeamStatus();
-
