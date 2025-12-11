@@ -535,7 +535,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                         {selectedAgent.behavioralLevel &&
                           selectedAgent.behavioralLevel !== 'NONE' && (
                             <p className="mt-1 text-sm text-purple-600 dark:text-purple-400">
-                              🧠 Behavioral Science: {selectedAgent.behavioralLevel}
+                              {localize('com_ui_behavioral_science')}: {selectedAgent.behavioralLevel}
                             </p>
                           )}
                       </div>
@@ -740,7 +740,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
             <div className="border-t border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 dark:border-gray-700 dark:from-gray-800/50 dark:to-gray-800">
               <div className="flex items-center justify-between">
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  ✨ Superhuman Team • Top 0.1% experts collaborating on your project
+                  {localize('com_ui_superhuman_team_footer')}
                 </p>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-gray-400">{localize('com_ui_powered_by')}</span>
