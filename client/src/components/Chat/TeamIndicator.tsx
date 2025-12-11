@@ -8,7 +8,6 @@ import {
   Briefcase,
   FileText,
   Sparkles,
-  Wand2,
   BookOpen,
   Trash2,
   Eye,
@@ -19,6 +18,7 @@ import { useRecoilState } from 'recoil';
 import { QueryKeys, Constants, dataService } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import store from '~/store';
+import { useLocalize } from '~/hooks';
 
 interface KnowledgeDocument {
   documentId: string;
@@ -184,6 +184,7 @@ const isApprovalMessage = (text: string): boolean => {
 };
 
 export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
+  const localize = useLocalize();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [previousTeamCount, setPreviousTeamCount] = useState(0);
@@ -352,7 +353,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
     return (
       <div className="flex items-center gap-1.5 rounded-md bg-gradient-to-r from-purple-500/20 to-blue-500/20 px-2.5 py-1 text-xs font-medium text-purple-600 dark:text-purple-400">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        <span>Designing Team...</span>
+        <span>{localize('com_ui_designing_team')}</span>
       </div>
     );
   }
@@ -362,7 +363,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
     return (
       <div className="flex items-center gap-1.5 rounded-md bg-gradient-to-r from-amber-500/20 to-orange-500/20 px-2.5 py-1 text-xs font-medium text-amber-600 dark:text-amber-400">
         <Sparkles className="h-3.5 w-3.5" />
-        <span>Review Team</span>
+        <span>{localize('com_ui_review_team')}</span>
       </div>
     );
   }
@@ -372,7 +373,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
     return (
       <div className="flex items-center gap-1.5 rounded-md bg-gradient-to-r from-green-500/20 to-emerald-500/20 px-2.5 py-1 text-xs font-medium text-green-600 dark:text-green-400">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        <span>Creating Team...</span>
+        <span>{localize('com_ui_creating_team')}</span>
       </div>
     );
   }
@@ -393,19 +394,19 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
             ? 'animate-pulse bg-green-500/20 text-green-600 dark:text-green-400'
             : 'bg-gradient-to-r from-emerald-500/20 to-blue-500/20 text-emerald-600 hover:from-emerald-500/30 hover:to-blue-500/30 dark:text-emerald-400'
         }`}
-        title="Team Mode Active - Your messages will be answered by the team"
+        title={localize('com_ui_team_mode_active')}
       >
         {showSuccess ? (
           <>
             <CheckCircle2 className="h-3.5 w-3.5" />
-            <span>Team Ready!</span>
+            <span>{localize('com_ui_team_ready')}</span>
           </>
         ) : (
           <>
             <Users className="h-3.5 w-3.5" />
             <span className="flex items-center gap-1">
               <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-              {teamAgents.length} Active
+              {teamAgents.length} {localize('com_ui_active')}
             </span>
           </>
         )}
@@ -433,9 +434,9 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                     <Sparkles className="h-6 w-6 text-white" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-white">Superhuman Team</h2>
+                    <h2 className="text-xl font-bold text-white">{localize('com_ui_superhuman_team')}</h2>
                     <p className="text-sm text-white/80">
-                      {teamAgents.length} elite specialists • Top 0.1% experts
+                      {teamAgents.length} {localize('com_ui_elite_specialists')} • {localize('com_ui_top_experts')}
                     </p>
                   </div>
                 </div>
@@ -466,7 +467,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                 }`}
               >
                 <Users className="h-4 w-4" />
-                Team Members
+                {localize('com_ui_team_members')}
                 <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs dark:bg-blue-900/30">
                   {teamAgents.length}
                 </span>
@@ -483,7 +484,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                 }`}
               >
                 <BookOpen className="h-4 w-4" />
-                Knowledge Base
+                {localize('com_ui_knowledge_base')}
                 {knowledgeDocs.length > 0 && (
                   <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs dark:bg-purple-900/30">
                     {knowledgeDocs.length}
@@ -503,7 +504,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                       onClick={() => setSelectedAgent(null)}
                       className="mb-2 flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
                     >
-                      ← Back to team
+                      ← {localize('com_ui_back_to_team')}
                     </button>
 
                     <div className="flex items-start gap-4">
@@ -541,7 +542,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                       <div className="mt-6 rounded-xl bg-blue-50 p-4 dark:bg-blue-900/20">
                         <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-blue-700 dark:text-blue-300">
                           <Briefcase className="h-4 w-4" />
-                          Expertise & Responsibilities
+                          {localize('com_ui_expertise_responsibilities')}
                         </div>
                         <p className="text-sm leading-relaxed text-blue-800 dark:text-blue-200">
                           {selectedAgent.responsibilities}
@@ -553,7 +554,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                       <div className="rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
                         <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
                           <FileText className="h-4 w-4" />
-                          System Instructions
+                          {localize('com_ui_system_instructions')}
                         </div>
                         <div className="max-h-64 overflow-y-auto">
                           <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-600 dark:text-gray-400">
@@ -608,7 +609,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                             {agent.role}
                           </p>
                           <p className="mt-2 text-xs text-blue-600 opacity-0 transition-opacity group-hover:opacity-100 dark:text-blue-400">
-                            View full profile →
+                            {localize('com_ui_view_full_profile')} →
                           </p>
                         </div>
                       </button>
@@ -623,7 +624,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                     onClick={() => setSelectedDocument(null)}
                     className="mb-2 flex items-center gap-1 text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400"
                   >
-                    ← Back to knowledge base
+                    ← {localize('com_ui_back_to_knowledge_base')}
                   </button>
 
                   <div className="flex items-start justify-between gap-4">
@@ -643,13 +644,13 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                     </div>
                     <button
                       onClick={() => {
-                        if (confirm('Are you sure you want to delete this document?')) {
+                        if (confirm(localize('com_ui_confirm_delete_document'))) {
                           deleteKnowledgeMutation.mutate(selectedDocument.documentId);
                         }
                       }}
                       disabled={deleteKnowledgeMutation.isLoading}
                       className="rounded-lg bg-red-100 p-2 text-red-600 transition-colors hover:bg-red-200 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40"
-                      title="Delete document"
+                      title={localize('com_ui_delete_document')}
                     >
                       {deleteKnowledgeMutation.isLoading ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -675,7 +676,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                   <div className="rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
                     <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
                       <FileText className="h-4 w-4" />
-                      Document Content
+                      {localize('com_ui_document_content')}
                     </div>
                     <div className="max-h-96 overflow-y-auto">
                       <pre className="whitespace-pre-wrap text-sm leading-relaxed text-gray-600 dark:text-gray-400">
@@ -691,11 +692,10 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                     <BookOpen className="h-8 w-8 text-purple-500" />
                   </div>
                   <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">
-                    No Documents Yet
+                    {localize('com_ui_no_documents_yet')}
                   </h3>
                   <p className="max-w-sm text-sm text-gray-500 dark:text-gray-400">
-                    When the team generates documents, you can save them to the knowledge base for
-                    future reference. Click "Save to KB" on any team output.
+                    {localize('com_ui_no_documents_description')}
                   </p>
                 </div>
               ) : (
@@ -724,7 +724,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                         </p>
                         <p className="mt-2 flex items-center gap-1 text-xs text-purple-600 opacity-0 transition-opacity group-hover:opacity-100 dark:text-purple-400">
                           <Eye className="h-3 w-3" />
-                          View document →
+                          {localize('com_ui_view_document')} →
                         </p>
                       </div>
                     </button>
@@ -740,9 +740,9 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                   ✨ Superhuman Team • Top 0.1% experts collaborating on your project
                 </p>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400">Powered by</span>
+                  <span className="text-xs text-gray-400">{localize('com_ui_powered_by')}</span>
                   <span className="rounded bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
-                    Dr. Sterling Framework
+                    {localize('com_ui_dr_sterling_framework')}
                   </span>
                 </div>
               </div>
