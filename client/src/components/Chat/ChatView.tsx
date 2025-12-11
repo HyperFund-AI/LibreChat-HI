@@ -8,7 +8,7 @@ import { Constants, buildTree } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
-import { useChatHelpers, useAddedResponse, useSSE } from '~/hooks';
+import { useChatHelpers, useAddedResponse, useSSE, useLocalize } from '~/hooks';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import TeamCollaboration from './TeamCollaboration';
@@ -32,6 +32,7 @@ function LoadingSpinner() {
 }
 
 function ChatView({ index = 0 }: { index?: number }) {
+  const localize = useLocalize();
   const { conversationId } = useParams();
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
   const addedSubmission = useRecoilValue(store.submissionByIndex(index + 1));
@@ -115,10 +116,10 @@ function ChatView({ index = 0 }: { index?: number }) {
                     <Loader2 className="h-8 w-8 animate-spin text-blue-600 dark:text-blue-400" />
                     <div className="text-center">
                       <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                        Creating Team...
+                        {localize('com_ui_creating_team')}
                       </p>
                       <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                        Confirming with Dr. Sterling and assembling your Superhuman Team
+                        {localize('com_ui_confirming_team_assembly')}
                       </p>
                     </div>
                   </div>
