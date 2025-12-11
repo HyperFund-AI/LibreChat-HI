@@ -535,7 +535,6 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                             {selectedAgent.behavioralLevel &&
                               selectedAgent.behavioralLevel !== 'NONE' && (
                                 <p className="mt-1 text-sm text-purple-600 dark:text-purple-400">
-                                  {/* eslint-disable-next-line i18next/no-literal-string */}
                                   🧠 Behavioral Science: {selectedAgent.behavioralLevel}
                                 </p>
                               )}
@@ -546,7 +545,6 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                           <div className="mt-6 rounded-xl bg-blue-50 p-4 dark:bg-blue-900/20">
                             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-blue-700 dark:text-blue-300">
                               <Briefcase className="h-4 w-4" />
-                              {/* eslint-disable-next-line i18next/no-literal-string */}
                               Expertise & Responsibilities
                             </div>
                             <p className="text-sm leading-relaxed text-blue-800 dark:text-blue-200">
@@ -559,7 +557,6 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                           <div className="rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
                             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
                               <FileText className="h-4 w-4" />
-                              {/* eslint-disable-next-line i18next/no-literal-string */}
                               System Instructions
                             </div>
                             <div className="max-h-64 overflow-y-auto">
@@ -616,7 +613,6 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                             <p className="truncate text-sm text-gray-500 dark:text-gray-400">
                               {agent.role}
                             </p>
-                            {/* eslint-disable-next-line i18next/no-literal-string */}
                             <p className="mt-2 text-xs text-blue-600 opacity-0 transition-opacity group-hover:opacity-100 dark:text-blue-400">
                               View full profile →
                             </p>
@@ -689,7 +685,6 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                       <div className="rounded-xl bg-gray-50 p-4 dark:bg-gray-800">
                         <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
                           <FileText className="h-4 w-4" />
-                          {/* eslint-disable-next-line i18next/no-literal-string */}
                           Document Content
                         </div>
                         <div className="max-h-96 overflow-y-auto">
@@ -748,7 +743,6 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                           <p className="mt-1 line-clamp-2 text-sm text-gray-500 dark:text-gray-400">
                             {doc.content.substring(0, 150)}...
                           </p>
-                          {/* eslint-disable-next-line i18next/no-literal-string */}
                           <p className="mt-2 flex items-center gap-1 text-xs text-purple-600 opacity-0 transition-opacity group-hover:opacity-100 dark:text-purple-400">
                             <Eye className="h-3 w-3" />
                             View document →

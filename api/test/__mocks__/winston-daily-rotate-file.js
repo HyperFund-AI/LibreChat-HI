@@ -1,6 +1,6 @@
 // Manual mock for winston-daily-rotate-file
 // This prevents the module from trying to load file-stream-rotator
-module.exports = jest.fn().mockImplementation(function(options) {
+module.exports = jest.fn().mockImplementation(function (options) {
   this.level = options?.level || 'error';
   this.filename = options?.filename || '../logs/error-%DATE%.log';
   this.datePattern = options?.datePattern || 'YYYY-MM-DD';

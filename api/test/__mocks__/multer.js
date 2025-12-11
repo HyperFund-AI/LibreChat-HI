@@ -31,7 +31,7 @@ multerMock.diskStorage = jest.fn((options) => {
     }),
     _removeFile: jest.fn((req, file, cb) => cb(null)),
   };
-  
+
   // Add getDestination and getFilename methods for testing
   if (options.destination) {
     storage.getDestination = options.destination;
@@ -39,7 +39,7 @@ multerMock.diskStorage = jest.fn((options) => {
   if (options.filename) {
     storage.getFilename = options.filename;
   }
-  
+
   return storage;
 });
 
