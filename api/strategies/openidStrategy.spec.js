@@ -77,7 +77,7 @@ jest.mock('openid-client/passport', () => {
 
   // Support both CommonJS and ES module dynamic imports
   mockModule.default = mockModule;
-  
+
   return mockModule;
 });
 

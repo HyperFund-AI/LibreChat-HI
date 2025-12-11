@@ -264,7 +264,7 @@ async function setupOpenId() {
     const importedClient = await import('openid-client');
     // Handle both ES module (with default) and CommonJS module formats
     client = importedClient.default || importedClient;
-    
+
     const importedPassport = await import('openid-client/passport');
     // Handle both ES module (with default) and CommonJS module formats
     const passportModule = importedPassport.default || importedPassport;
