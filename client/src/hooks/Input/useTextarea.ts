@@ -106,9 +106,12 @@ export default function useTextarea({
 
       // For regular users, replace model name with "Hyper Intelligence"
       // Admins and agents/assistants still see the actual names
-      const displaySender = !isAdmin && !isAssistant && !isAgent 
-        ? 'Hyper Intelligence' 
-        : (sender ? sender : localize('com_endpoint_ai'));
+      const displaySender =
+        !isAdmin && !isAssistant && !isAgent
+          ? 'Hyper Intelligence'
+          : sender
+            ? sender
+            : localize('com_endpoint_ai');
 
       return `${localize('com_endpoint_message_new', {
         0: displaySender,

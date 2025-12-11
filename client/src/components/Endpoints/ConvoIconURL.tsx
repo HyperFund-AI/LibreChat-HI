@@ -49,22 +49,26 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
     () => !!(iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/'))),
     [iconURL],
   );
-  
+
   // Determine if we should use HyperAI logo for regular users
   // Check if this is a known endpoint that should be rebranded
   const endpoint = iconURL || endpointIconURL || '';
-  const shouldUseHyperAILogo = !isAdmin && 
-    endpoint !== EModelEndpoint.assistants && 
-    endpoint !== EModelEndpoint.azureAssistants && 
+  const shouldUseHyperAILogo =
+    !isAdmin &&
+    endpoint !== EModelEndpoint.assistants &&
+    endpoint !== EModelEndpoint.azureAssistants &&
     endpoint !== EModelEndpoint.agents &&
     !assistantName &&
     !agentName;
-  
+
   if (isURL) {
     // For regular users, replace known endpoint icons with HyperAI logo
     if (shouldUseHyperAILogo) {
       return (
-        <div className={classMap[context ?? 'default'] ?? classMap.default} style={styleMap[context ?? 'default'] ?? styleMap.default}>
+        <div
+          className={classMap[context ?? 'default'] ?? classMap.default}
+          style={styleMap[context ?? 'default'] ?? styleMap.default}
+        >
           {getHyperAILogo(41)}
         </div>
       );
@@ -82,19 +86,19 @@ const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
 
   return (
     <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
-      {shouldUseHyperAILogo ? (
-        getHyperAILogo(41)
-      ) : Icon && (
-        <Icon
-          size={41}
-          context={context}
-          className="h-2/3 w-2/3"
-          agentName={agentName}
-          iconURL={endpointIconURL}
-          assistantName={assistantName}
-          avatar={assistantAvatar || agentAvatar}
-        />
-      )}
+      {shouldUseHyperAILogo
+        ? getHyperAILogo(41)
+        : Icon && (
+            <Icon
+              size={41}
+              context={context}
+              className="h-2/3 w-2/3"
+              agentName={agentName}
+              iconURL={endpointIconURL}
+              assistantName={assistantName}
+              avatar={assistantAvatar || agentAvatar}
+            />
+          )}
     </div>
   );
 };

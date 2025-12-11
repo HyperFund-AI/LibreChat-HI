@@ -15,11 +15,7 @@ export function useModelIcon(originalIcon: React.ReactNode): React.ReactNode {
 
   // For regular users, return HyperAI logo
   return (
-    <img
-      src="/assets/hyperai-logo.svg"
-      alt="HyperAI"
-      className="h-full w-full object-contain"
-    />
+    <img src="/assets/hyperai-logo.svg" alt="HyperAI" className="h-full w-full object-contain" />
   );
 }
 
@@ -36,4 +32,3 @@ export function getHyperAILogo(size: number = 30): React.ReactNode {
     />
   );
 }
-
