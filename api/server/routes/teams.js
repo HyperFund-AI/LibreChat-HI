@@ -7,7 +7,12 @@ const {
   convertParsedTeamToAgents,
   DR_STERLING_AGENT_ID,
 } = require('~/server/services/Teams');
-const { saveTeamAgents, getTeamAgents, getTeamInfo, clearTeamAgents } = require('~/models/Conversation');
+const {
+  saveTeamAgents,
+  getTeamAgents,
+  getTeamInfo,
+  clearTeamAgents,
+} = require('~/models/Conversation');
 const { teamChatController } = require('~/server/controllers/teams');
 const {
   saveToKnowledge,
@@ -52,7 +57,7 @@ router.get('/:conversationId', async (req, res) => {
   try {
     const { conversationId } = req.params;
     const teamInfo = await getTeamInfo(conversationId);
-    
+
     res.json({
       success: true,
       conversationId,
@@ -78,25 +83,26 @@ router.post('/:conversationId/parse', async (req, res) => {
     const { markdownContent, objective } = req.body;
 
     if (!markdownContent) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'markdownContent is required' 
+      return res.status(400).json({
+        success: false,
+        error: 'markdownContent is required',
       });
     }
 
     // Parse the team from markdown
     const parsedTeam = parseTeamFromMarkdown(markdownContent);
-    
+
     if (!parsedTeam || parsedTeam.members.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Could not parse team from markdown. Make sure Dr. Sterling has generated a complete team specification.',
+        error:
+          'Could not parse team from markdown. Make sure Dr. Sterling has generated a complete team specification.',
       });
     }
 
     // Try to extract objective from markdown if not explicitly provided
     let teamObjective = objective || null;
-    
+
     if (!teamObjective) {
       // Look for objective in markdown (common patterns from Dr. Sterling)
       const objectivePatterns = [
@@ -105,7 +111,7 @@ router.post('/:conversationId/parse', async (req, res) => {
         /\*\*Primary Objective:\*\*\s*([^\n]+)/i,
         /## PROJECT OVERVIEW[\s\S]*?(?:objective|goal|mission)[:\s]+([^\n]+)/i,
       ];
-      
+
       for (const pattern of objectivePatterns) {
         const match = markdownContent.match(pattern);
         if (match) {
@@ -121,7 +127,9 @@ router.post('/:conversationId/parse', async (req, res) => {
     // Save to conversation with objective
     await saveTeamAgents(conversationId, teamAgents, DR_STERLING_AGENT_ID, null, teamObjective);
 
-    logger.info(`[POST /api/teams/:conversationId/parse] Created ${teamAgents.length} team agents${teamObjective ? ' with objective' : ''}`);
+    logger.info(
+      `[POST /api/teams/:conversationId/parse] Created ${teamAgents.length} team agents${teamObjective ? ' with objective' : ''}`,
+    );
 
     res.json({
       success: true,
@@ -145,7 +153,7 @@ router.delete('/:conversationId', async (req, res) => {
   try {
     const { conversationId } = req.params;
     await clearTeamAgents(conversationId);
-    
+
     res.json({
       success: true,
       message: 'Team agents cleared successfully',
@@ -183,7 +191,7 @@ router.get('/:conversationId/knowledge', async (req, res) => {
   try {
     const { conversationId } = req.params;
     const documents = await getKnowledge(conversationId);
-    
+
     res.json({
       success: true,
       conversationId,
@@ -254,7 +262,7 @@ router.get('/:conversationId/knowledge/:documentId', async (req, res) => {
   try {
     const { documentId } = req.params;
     const document = await getKnowledgeDocument(documentId);
-    
+
     if (!document) {
       return res.status(404).json({
         success: false,
@@ -280,7 +288,7 @@ router.delete('/:conversationId/knowledge/:documentId', async (req, res) => {
   try {
     const { documentId } = req.params;
     const success = await deleteKnowledgeDocument(documentId);
-    
+
     res.json({
       success,
       message: success ? 'Document deleted' : 'Failed to delete document',
@@ -299,7 +307,7 @@ router.delete('/:conversationId/knowledge', async (req, res) => {
   try {
     const { conversationId } = req.params;
     const deletedCount = await clearKnowledge(conversationId);
-    
+
     res.json({
       success: true,
       deletedCount,
@@ -312,4 +320,3 @@ router.delete('/:conversationId/knowledge', async (req, res) => {
 });
 
 module.exports = router;
-

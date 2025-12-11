@@ -738,24 +738,29 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   if (messageAttachment && !tool_resource) {
     // Try to get conversationId from multiple sources
     let conversationId = req.body?.conversationId || metadata?.conversationId;
-    
+
     // If not in request, find conversation that contains this file
     if (!conversationId && result?.file_id) {
       try {
         const { Conversation } = require('~/db/models');
         const conversation = await Conversation.findOne(
           { files: result.file_id },
-          { conversationId: 1 }
+          { conversationId: 1 },
         ).lean();
         if (conversation) {
           conversationId = conversation.conversationId;
-          logger.debug(`[processAgentFileUpload] Found conversation ${conversationId} for file ${result.file_id}`);
+          logger.debug(
+            `[processAgentFileUpload] Found conversation ${conversationId} for file ${result.file_id}`,
+          );
         }
       } catch (error) {
-        logger.debug('[processAgentFileUpload] Could not find conversation by file_id:', error.message);
+        logger.debug(
+          '[processAgentFileUpload] Could not find conversation by file_id:',
+          error.message,
+        );
       }
     }
-    
+
     if (conversationId) {
       try {
         // Check if file is a PDF or document type that should trigger team creation
@@ -779,7 +784,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
               // Ensure coordinator agent exists
               const { createCoordinatorAgent } = require('~/server/services/Teams');
               await createCoordinatorAgent(req.user.id);
-              
+
               const analysis = await analyzeFile({ req, file, file_id });
               const teamAgents = await createTeamAgents({
                 conversationId,

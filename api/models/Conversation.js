@@ -84,14 +84,20 @@ const getConvoFiles = async (conversationId) => {
  * @param {string} teamObjective - The main objective for the team (optional)
  * @returns {Promise<Object>} Updated conversation
  */
-const saveTeamAgents = async (conversationId, teamAgents, hostAgentId, teamFileId, teamObjective = null) => {
+const saveTeamAgents = async (
+  conversationId,
+  teamAgents,
+  hostAgentId,
+  teamFileId,
+  teamObjective = null,
+) => {
   try {
     const update = {
       teamAgents,
       hostAgentId,
       teamFileId,
     };
-    
+
     // Only add teamObjective if provided
     if (teamObjective) {
       update.teamObjective = teamObjective;
@@ -107,7 +113,9 @@ const saveTeamAgents = async (conversationId, teamAgents, hostAgentId, teamFileI
       throw new Error('Conversation not found');
     }
 
-    logger.debug(`[saveTeamAgents] Saved ${teamAgents.length} team agents to conversation ${conversationId}${teamObjective ? ' with objective' : ''}`);
+    logger.debug(
+      `[saveTeamAgents] Saved ${teamAgents.length} team agents to conversation ${conversationId}${teamObjective ? ' with objective' : ''}`,
+    );
     return conversation;
   } catch (error) {
     logger.error('[saveTeamAgents] Error saving team agents:', error);
@@ -138,14 +146,14 @@ const getTeamAgents = async (conversationId) => {
 const getTeamInfo = async (conversationId) => {
   try {
     const conversation = await Conversation.findOne(
-      { conversationId }, 
-      'teamAgents hostAgentId teamFileId teamObjective'
+      { conversationId },
+      'teamAgents hostAgentId teamFileId teamObjective',
     ).lean();
-    
+
     if (!conversation || !conversation.teamAgents) {
       return null;
     }
-    
+
     return {
       teamAgents: conversation.teamAgents,
       hostAgentId: conversation.hostAgentId,
