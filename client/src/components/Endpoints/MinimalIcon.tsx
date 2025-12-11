@@ -71,7 +71,12 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
 
   // For regular users, replace all model provider icons with HyperAI logo
   // Exclude assistants and agents as they have custom avatars
-  if (!isAdmin && endpoint !== EModelEndpoint.assistants && endpoint !== EModelEndpoint.azureAssistants && endpoint !== EModelEndpoint.agents) {
+  if (
+    !isAdmin &&
+    endpoint !== EModelEndpoint.assistants &&
+    endpoint !== EModelEndpoint.azureAssistants &&
+    endpoint !== EModelEndpoint.agents
+  ) {
     icon = getHyperAILogo(size);
     name = 'HyperAI';
   }

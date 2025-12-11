@@ -70,10 +70,15 @@ jest.mock('openid-client/passport', () => {
     return { name: 'openid', options, verify };
   });
 
-  return {
+  const mockModule = {
     Strategy: mockStrategy,
     __getVerifyCallback: () => verifyCallback,
   };
+
+  // Support both CommonJS and ES module dynamic imports
+  mockModule.default = mockModule;
+
+  return mockModule;
 });
 
 // Mock passport

@@ -1,5 +1,5 @@
 // api/test/__mocks__/openid-client.js
-module.exports = {
+const mockOpenIdClient = {
   Issuer: {
     discover: jest.fn().mockResolvedValue({
       Client: jest.fn().mockImplementation(() => ({
@@ -68,4 +68,18 @@ module.exports = {
     .fn()
     .mockResolvedValue({ access_token: 'mock_grant_access_token', expires_in: 3600 }),
   customFetch: Symbol('customFetch'),
+};
+
+// Export for CommonJS require()
+module.exports = mockOpenIdClient;
+
+// For ES module dynamic imports: when a CommonJS module is imported as ES module,
+// the entire module.exports becomes the default export
+// So await import('openid-client') returns { default: mockOpenIdClient }
+// But the code expects client.genericGrantRequest directly, so we need to handle this
+// by making the default export be the object itself with all properties spread
+module.exports.default = {
+  ...mockOpenIdClient,
+  // Ensure genericGrantRequest is directly accessible
+  genericGrantRequest: mockOpenIdClient.genericGrantRequest,
 };

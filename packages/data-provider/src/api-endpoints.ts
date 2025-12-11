@@ -241,7 +241,8 @@ export const fileDownload = (userId: string, fileId: string) =>
   `${BASE_URL}/api/files/download/${userId}/${fileId}`;
 export const fileConfig = () => `${BASE_URL}/api/files/config`;
 export const agentFiles = (agentId: string) => `${BASE_URL}/api/files/agent/${agentId}`;
-export const updateFileGlobalContext = (fileId: string) => `${BASE_URL}/api/files/${fileId}/global-context`;
+export const updateFileGlobalContext = (fileId: string) =>
+  `${BASE_URL}/api/files/${fileId}/global-context`;
 
 export const images = () => `${files()}/images`;
 
@@ -388,3 +389,19 @@ export const getEffectivePermissions = (resourceType: ResourceType, resourceId: 
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>
   `${BASE_URL}/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;
+
+/* Teams */
+export const teams = () => `${BASE_URL}/api/teams`;
+export const teamDrSterling = () => `${teams()}/dr-sterling`;
+export const teamByConversation = (conversationId: string) =>
+  `${teams()}/${encodeURIComponent(conversationId)}`;
+export const teamParse = (conversationId: string) =>
+  `${teams()}/${encodeURIComponent(conversationId)}/parse`;
+export const teamChat = (conversationId: string) =>
+  `${teams()}/${encodeURIComponent(conversationId)}/chat`;
+
+// Team Knowledge Base endpoints
+export const teamKnowledge = (conversationId: string) =>
+  `${teams()}/${encodeURIComponent(conversationId)}/knowledge`;
+export const teamKnowledgeDocument = (conversationId: string, documentId: string) =>
+  `${teams()}/${encodeURIComponent(conversationId)}/knowledge/${encodeURIComponent(documentId)}`;

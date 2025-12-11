@@ -21,6 +21,7 @@ const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { getAgent } = require('~/models/Agent');
 const { logViolation } = require('~/cache');
+const { getTeamAgents, getConvo } = require('~/models/Conversation');
 
 /**
  * @param {AbortSignal} signal
@@ -81,10 +82,34 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     throw new Error('No agent promise provided');
   }
 
+  logger.debug(
+    `[initializeClient] Awaiting agent promise. agent_id in endpointOption: ${endpointOption.agent_id}`,
+  );
   const primaryAgent = await endpointOption.agent;
   delete endpointOption.agent;
   if (!primaryAgent) {
+    logger.error(
+      `[initializeClient] Primary agent is NULL! agent_id was: ${endpointOption.agent_id}`,
+    );
     throw new Error('Agent not found');
+  }
+
+  logger.debug(
+    `[initializeClient] Primary agent resolved: id=${primaryAgent.id}, name=${primaryAgent.name}, tools=${JSON.stringify(primaryAgent.tools || [])}`,
+  );
+  logger.debug(
+    `[initializeClient] Agent instructions length: ${primaryAgent.instructions?.length || 0} characters`,
+  );
+
+  // Check if this is Dr. Sterling (for debugging)
+  if (primaryAgent.id === 'dr_sterling_coordinator' || primaryAgent.isTeamCoordinator) {
+    logger.info(`[initializeClient] 🎩 Dr. Sterling agent detected!`);
+    logger.info(
+      `[initializeClient] 🎩 Instructions preview: ${primaryAgent.instructions?.substring(0, 200) || 'NO INSTRUCTIONS!'}`,
+    );
+    if (!primaryAgent.instructions || primaryAgent.instructions.length === 0) {
+      logger.error(`[initializeClient] 🎩 WARNING: Dr. Sterling has NO instructions!`);
+    }
   }
 
   const modelsConfig = await getModelsConfig(req);
@@ -108,6 +133,27 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const requestFiles = req.body.files ?? [];
   /** @type {string} */
   const conversationId = req.body.conversationId;
+
+  // Check if conversation has team agents and load them
+  let teamAgents = null;
+  if (conversationId) {
+    try {
+      const conversation = await getConvo(req.user.id, conversationId);
+      if (
+        conversation?.teamAgents &&
+        Array.isArray(conversation.teamAgents) &&
+        conversation.teamAgents.length > 0
+      ) {
+        teamAgents = conversation.teamAgents;
+        logger.debug(
+          `[initializeClient] Found ${teamAgents.length} team agents in conversation ${conversationId}`,
+        );
+      }
+    } catch (error) {
+      logger.error('[initializeClient] Error loading team agents:', error);
+      // Continue without team agents if there's an error
+    }
+  }
 
   const primaryConfig = await initializeAgent({
     req,
@@ -160,8 +206,79 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     agentConfigs.set(agentId, config);
   }
 
+  // Load team agents if they exist
+  if (teamAgents && teamAgents.length > 0) {
+    for (const teamAgent of teamAgents) {
+      // Create ephemeral agent configuration from team agent data
+      const ephemeralAgent = {
+        id: teamAgent.agentId,
+        name: teamAgent.name,
+        description: `Team member: ${teamAgent.role}`,
+        instructions: teamAgent.instructions,
+        provider: teamAgent.provider || primaryAgent.provider,
+        model: teamAgent.model || primaryAgent.model,
+        model_parameters: primaryAgent.model_parameters || {},
+        tools: [],
+        edges: [],
+      };
+
+      try {
+        const config = await initializeAgent({
+          req,
+          res,
+          agent: ephemeralAgent,
+          loadTools,
+          requestFiles,
+          conversationId,
+          endpointOption,
+          allowedProviders,
+        });
+        if (userMCPAuthMap != null) {
+          Object.assign(userMCPAuthMap, config.userMCPAuthMap ?? {});
+        } else {
+          userMCPAuthMap = config.userMCPAuthMap;
+        }
+        agentConfigs.set(teamAgent.agentId, config);
+        logger.debug(
+          `[initializeClient] Loaded team agent: ${teamAgent.agentId} (${teamAgent.role})`,
+        );
+      } catch (error) {
+        logger.error(`[initializeClient] Error loading team agent ${teamAgent.agentId}:`, error);
+        // Continue loading other agents even if one fails
+      }
+    }
+  }
+
   let edges = primaryConfig.edges;
   const checkAgentInit = (agentId) => agentId === primaryConfig.id || agentConfigs.has(agentId);
+
+  // Add edges for team agents if they exist
+  if (teamAgents && teamAgents.length > 0) {
+    // Create edges from primary agent to all team agents
+    for (const teamAgent of teamAgents) {
+      if (!edges) {
+        edges = [];
+      }
+      edges.push({
+        from: primaryConfig.id,
+        to: teamAgent.agentId,
+      });
+    }
+    // Create bidirectional edges between team agents for collaboration
+    for (let i = 0; i < teamAgents.length; i++) {
+      for (let j = i + 1; j < teamAgents.length; j++) {
+        edges.push({
+          from: teamAgents[i].agentId,
+          to: teamAgents[j].agentId,
+        });
+        edges.push({
+          from: teamAgents[j].agentId,
+          to: teamAgents[i].agentId,
+        });
+      }
+    }
+  }
+
   if ((edges?.length ?? 0) > 0) {
     for (const edge of edges) {
       if (Array.isArray(edge.to)) {

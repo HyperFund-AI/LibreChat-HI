@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
 import { useSetRecoilState } from 'recoil';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   request,
   Constants,
+  QueryKeys,
   /* @ts-ignore */
   createPayload,
   LocalStorageKeys,
@@ -16,7 +18,7 @@ import type { TResData } from '~/common';
 import { useGenTitleMutation, useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
-import store from '~/store';
+import store, { teamCollaborationAtom, TeamCollaborationState, TeamThinkingStep } from '~/store';
 
 const clearDraft = (conversationId?: string | null) => {
   if (conversationId) {
@@ -45,12 +47,15 @@ export default function useSSE(
   runIndex = 0,
 ) {
   const genTitle = useGenTitleMutation();
+  const queryClient = useQueryClient();
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
 
   const { token, isAuthenticated } = useAuthContext();
   const [completed, setCompleted] = useState(new Set());
   const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
+  const setTeamCollaboration = useSetRecoilState(teamCollaborationAtom);
+  const setIsTeamApprovalLoading = useSetRecoilState(store.isTeamApprovalLoading);
 
   const {
     setMessages,
@@ -123,13 +128,49 @@ export default function useSSE(
 
       if (data.final != null) {
         clearDraft(submission.conversation?.conversationId);
-        const { plugins } = data;
+        const { plugins, teamCreated } = data;
+
+        // If team was created by Dr. Sterling, invalidate conversation to refresh team data
+        if (teamCreated && submission.conversation?.conversationId) {
+          console.log('[useSSE] Team created by Dr. Sterling, refreshing conversation data');
+          // Invalidate conversation queries to refresh team data
+          queryClient.invalidateQueries([
+            QueryKeys.conversation,
+            submission.conversation.conversationId,
+          ]);
+          queryClient.invalidateQueries([
+            QueryKeys.conversation,
+            submission.conversation.conversationId,
+            'team',
+          ]);
+          // Clear team approval loading state
+          setIsTeamApprovalLoading(false);
+        }
+
+        // Mark team collaboration as complete and reset after delay
+        setTeamCollaboration((prev: TeamCollaborationState) => ({
+          ...prev,
+          phase: 'complete',
+          isActive: prev.steps.length > 0, // Keep active briefly to show completion
+        }));
+        setTimeout(() => {
+          setTeamCollaboration({
+            isActive: false,
+            conversationId: null,
+            steps: [],
+            currentAgent: null,
+            phase: 'idle',
+          });
+        }, 3000);
+
         try {
           finalHandler(data, { ...submission, plugins } as EventSubmission);
         } catch (error) {
           console.error('Error in finalHandler:', error);
           setIsSubmitting(false);
           setShowStopButton(false);
+          // Clear team approval loading state on error
+          setIsTeamApprovalLoading(false);
         }
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
         console.log('final', data);
@@ -145,10 +186,66 @@ export default function useSSE(
 
         createdHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.event != null) {
-        stepHandler(data, { ...submission, userMessage } as EventSubmission);
+        // Handle team collaboration events
+        if (
+          data.event === 'on_thinking' ||
+          data.event === 'on_agent_start' ||
+          data.event === 'on_agent_complete'
+        ) {
+          const eventData = data.data || {};
+          const conversationId = submission?.conversation?.conversationId || '';
+
+          setTeamCollaboration((prev: TeamCollaborationState) => {
+            // Determine phase based on event
+            let phase = prev.phase;
+            if (data.event === 'on_thinking') {
+              if (eventData.action === 'analyzing' || eventData.action === 'planned') {
+                phase = 'planning';
+              } else if (eventData.action === 'working' || eventData.action === 'completed') {
+                phase = 'specialist-work';
+              } else if (eventData.action === 'synthesizing') {
+                phase = 'synthesis';
+              } else if (eventData.action === 'complete') {
+                phase = 'complete';
+              }
+            }
+
+            const newStep: TeamThinkingStep = {
+              id: v4(),
+              agent: eventData.agent || eventData.agentName || 'Team',
+              role: eventData.role || eventData.agentRole || '',
+              action:
+                eventData.action || (data.event === 'on_agent_start' ? 'working' : 'completed'),
+              message:
+                eventData.message ||
+                `${eventData.agentName || 'Agent'} ${data.event === 'on_agent_start' ? 'started working' : 'finished'}`,
+              timestamp: Date.now(),
+            };
+
+            return {
+              isActive: true,
+              conversationId,
+              steps: [...prev.steps, newStep],
+              currentAgent: eventData.agent || eventData.agentName || null,
+              phase,
+            };
+          });
+        } else {
+          stepHandler(data, { ...submission, userMessage } as EventSubmission);
+        }
       } else if (data.sync != null) {
         const runId = v4();
         setActiveRunId(runId);
+
+        // Reset team collaboration state for new response
+        setTeamCollaboration({
+          isActive: false,
+          conversationId: null,
+          steps: [],
+          currentAgent: null,
+          phase: 'idle',
+        });
+
         /* synchronize messages to Assistants API as well as with real DB ID's */
         syncHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.type != null) {
@@ -235,6 +332,9 @@ export default function useSSE(
 
       console.log('error in server stream.');
       (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
+
+      // Clear team approval loading state on error
+      setIsTeamApprovalLoading(false);
 
       let data: TResData | undefined = undefined;
       try {

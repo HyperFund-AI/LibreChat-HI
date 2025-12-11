@@ -5,6 +5,7 @@ import { type TMessage } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
+import TeamDocumentActions from '~/components/Chat/TeamDocumentActions';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
@@ -193,6 +194,15 @@ const MessageRender = memo(
                   siblingIdx={siblingIdx ?? 0}
                   setSiblingIdx={setSiblingIdx ?? (() => ({}))}
                 />
+                {/* Team document actions for team collaboration responses */}
+                {!msg.isCreatedByUser &&
+                  (msg.sender === 'Team' || msg.model === 'team-collaboration') && (
+                    <TeamDocumentActions
+                      content={msg.text || ''}
+                      messageId={msg.messageId}
+                      isTeamResponse={true}
+                    />
+                  )}
               </MessageContext.Provider>
             </div>
 

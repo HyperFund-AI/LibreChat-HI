@@ -2,14 +2,16 @@ import { memo, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { Spinner } from '@librechat/client';
+import { Loader2 } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { Constants, buildTree } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, AddedChatContext, useFileMapContext, ChatFormProvider } from '~/Providers';
-import { useChatHelpers, useAddedResponse, useSSE } from '~/hooks';
+import { useChatHelpers, useAddedResponse, useSSE, useLocalize } from '~/hooks';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
+import TeamCollaboration from './TeamCollaboration';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
@@ -30,10 +32,12 @@ function LoadingSpinner() {
 }
 
 function ChatView({ index = 0 }: { index?: number }) {
+  const localize = useLocalize();
   const { conversationId } = useParams();
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
   const addedSubmission = useRecoilValue(store.submissionByIndex(index + 1));
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
+  const isTeamApprovalLoading = useRecoilValue(store.isTeamApprovalLoading);
 
   const fileMap = useFileMapContext();
 
@@ -78,8 +82,10 @@ function ChatView({ index = 0 }: { index?: number }) {
     <ChatFormProvider {...methods}>
       <ChatContext.Provider value={chatHelpers}>
         <AddedChatContext.Provider value={addedChatHelpers}>
+          {/* Team Collaboration - fixed position indicator */}
+          <TeamCollaboration />
           <Presentation>
-            <div className="flex h-full w-full flex-col">
+            <div className="relative flex h-full w-full flex-col">
               {!isLoading && <Header />}
               <>
                 <div
@@ -103,6 +109,22 @@ function ChatView({ index = 0 }: { index?: number }) {
                 </div>
                 {isLandingPage && <Footer />}
               </>
+              {/* Team Approval Loading Overlay */}
+              {isTeamApprovalLoading && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                  <div className="flex flex-col items-center gap-4 rounded-2xl bg-white px-8 py-6 shadow-2xl dark:bg-gray-800">
+                    <Loader2 className="h-8 w-8 animate-spin text-blue-600 dark:text-blue-400" />
+                    <div className="text-center">
+                      <p className="text-lg font-semibold text-gray-900 dark:text-white">
+                        {localize('com_ui_creating_team')}
+                      </p>
+                      <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                        {localize('com_ui_confirming_team_assembly')}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </Presentation>
         </AddedChatContext.Provider>

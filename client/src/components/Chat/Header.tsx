@@ -16,6 +16,7 @@ import { useChatContext } from '~/Providers';
 import { AnimatePresence, motion } from 'framer-motion';
 import store from '~/store';
 import DeveloperModelSelector from './DeveloperModelSelector';
+import TeamIndicator from './TeamIndicator';
 
 const defaultInterface = getConfigDefaults().interface;
 
@@ -70,6 +71,7 @@ export default function Header() {
             {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
             {hasAccessToBookmarks === true && <BookmarkMenu />}
             {hasAccessToMultiConvo === true && <AddMultiConvo />}
+            <TeamIndicator conversation={conversation} />
             <DeveloperModelSelector />
             {isSmallScreen && (
               <>
