@@ -14,7 +14,9 @@ let openidClient;
  */
 async function getOpenidClient() {
   if (!openidClient) {
-    openidClient = await import('openid-client');
+    const imported = await import('openid-client');
+    // Handle both ES module (with default) and CommonJS module formats
+    openidClient = imported.default || imported;
   }
   return openidClient;
 }

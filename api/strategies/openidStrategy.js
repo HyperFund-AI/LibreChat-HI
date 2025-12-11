@@ -261,8 +261,14 @@ function convertToUsername(input, defaultValue = '') {
 async function setupOpenId() {
   try {
     // Dynamic import of ESM modules
-    client = await import('openid-client');
-    const { Strategy: OpenIDStrategy } = await import('openid-client/passport');
+    const importedClient = await import('openid-client');
+    // Handle both ES module (with default) and CommonJS module formats
+    client = importedClient.default || importedClient;
+    
+    const importedPassport = await import('openid-client/passport');
+    // Handle both ES module (with default) and CommonJS module formats
+    const passportModule = importedPassport.default || importedPassport;
+    const { Strategy: OpenIDStrategy } = passportModule;
 
     // Define CustomOpenIDStrategy inside setupOpenId after imports are loaded
     class CustomOpenIDStrategy extends OpenIDStrategy {
