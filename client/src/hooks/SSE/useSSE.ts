@@ -126,25 +126,12 @@ export default function useSSE(
     sse.addEventListener('message', (e: MessageEvent) => {
       const data = JSON.parse(e.data);
 
-      console.log('[useSSE] Received event:', data.event || 'message', data); 
-      
-      // Log specifically if this is a thinking event with action: thinking
-      if (data.event === 'on_thinking' && data.data?.action === 'thinking') {
-        console.log('[useSSE] THINKING EVENT RECEIVED:', {
-          agent: data.data.agent,
-          action: data.data.action,
-          thinkingLength: data.data.thinking?.length || 0,
-          messageLength: data.data.message?.length || 0,
-        });
-      }
-      
       if (data.final != null) {
         clearDraft(submission.conversation?.conversationId);
         const { plugins, teamCreated } = data;
 
         // If team was created by Dr. Sterling, invalidate conversation to refresh team data
         if (teamCreated && submission.conversation?.conversationId) {
-          console.log('[useSSE] Team created by Dr. Sterling, refreshing conversation data');
           // Invalidate conversation queries to refresh team data
           queryClient.invalidateQueries([
             QueryKeys.conversation,
@@ -186,7 +173,6 @@ export default function useSSE(
           setIsTeamApprovalLoading(false);
         }
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
-        console.log('final', data);
         return;
       } else if (data.created != null) {
         const runId = v4();
@@ -199,6 +185,11 @@ export default function useSSE(
 
         createdHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.event != null) {
+        // Log all events for debugging
+        if (data.event.includes('thinking') || data.event.includes('agent')) {
+          console.log('[SSE] Event received:', data.event, data.data?.agent);
+        }
+        
         // Handle team collaboration events
         if (
           data.event === 'on_thinking' ||
@@ -231,7 +222,6 @@ export default function useSSE(
             const updatedAgentThinking = { ...prev.agentThinking };
             if (thinkingText && action === 'thinking') {
               updatedAgentThinking[agentName] = thinkingText;
-              console.log('[useSSE] Thinking update for', agentName, ':', thinkingText.length, 'chars');
               
               // For thinking events, only update agentThinking, don't add to steps
               return {
@@ -256,8 +246,6 @@ export default function useSSE(
               timestamp: Date.now(),
             };
 
-            console.log('[useSSE] Adding step:', action, 'for', agentName);
-            
             return {
               isActive: true,
               conversationId,
@@ -311,7 +299,6 @@ export default function useSSE(
 
     sse.addEventListener('open', () => {
       setAbortScroll(false);
-      console.log('connection is opened');
     });
 
     sse.addEventListener('cancel', async () => {

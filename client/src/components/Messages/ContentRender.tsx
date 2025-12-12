@@ -4,6 +4,7 @@ import { useRecoilValue } from 'recoil';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
+import TeamThinkingProcess from '~/components/Chat/Messages/ui/TeamThinkingProcess';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
@@ -167,6 +168,10 @@ const ContentRender = memo(
           <h2 className={cn('select-none font-semibold', fontSize)}>{messageLabel}</h2>
 
           <div className="flex flex-col gap-1">
+            {/* DEBUG TEST */}
+            <div style={{ background: 'green', color: 'white', padding: '10px', margin: '5px 0', fontSize: '12px' }}>
+              CONTENTRENDER: isCreatedByUser={String(msg.isCreatedByUser)} | isSubmitting={String(isSubmitting)} | sender={msg.sender}
+            </div>
             <div className="flex max-w-full flex-grow flex-col gap-0">
               <ContentParts
                 edit={edit}
@@ -183,6 +188,10 @@ const ContentRender = memo(
                 conversationId={conversation?.conversationId}
                 content={msg.content as Array<TMessageContentParts | undefined>}
               />
+              {/* Team thinking process - show for non-user messages while submitting */}
+              {!msg.isCreatedByUser && isSubmitting && (
+                <TeamThinkingProcess isSubmitting={true} />
+              )}
             </div>
 
             {(isSubmittingFamily || isSubmitting) && !(msg.children?.length ?? 0) ? (

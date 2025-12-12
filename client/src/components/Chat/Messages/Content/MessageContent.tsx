@@ -4,7 +4,6 @@ import { DelayedRender } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
 import TeamThinkingProcess from '~/components/Chat/Messages/ui/TeamThinkingProcess';
-import { teamCollaborationAtom } from '~/store/teamCollaboration';
 import Error from '~/components/Messages/Content/Error';
 import { useMessageContext } from '~/Providers';
 import MarkdownLite from './MarkdownLite';
@@ -147,28 +146,13 @@ const MessageContent = ({
 }: TMessageContentProps) => {
   const { message, isCreatedByUser } = props;
   const { messageId } = message;
-  const teamCollaboration = useRecoilValue(teamCollaborationAtom);
 
   const { thinkingContent, regularContent } = useMemo(() => parseThinkingContent(text), [text]);
   const showRegularCursor = useMemo(() => isLast && isSubmitting, [isLast, isSubmitting]);
 
-  // Check if team collaboration is active - this is the primary check
-  const isTeamCollaborationActive = teamCollaboration.isActive || Object.keys(teamCollaboration.agentThinking).length > 0;
-  
-  // Show team thinking process when collaboration is active and not a user message
-  const showTeamThinking = !isCreatedByUser && isSubmitting && isTeamCollaborationActive;
-
-  // Debug logging for team thinking - only log when relevant
-  if (isSubmitting && !isCreatedByUser) {
-    console.log('[MessageContent] TEAM THINKING CHECK:', {
-      messageId,
-      isSubmitting,
-      isCreatedByUser,
-      collaborationActive: teamCollaboration.isActive,
-      agentThinkingCount: Object.keys(teamCollaboration.agentThinking).length,
-      showTeamThinking,
-    });
-  }
+  // Show team thinking when submitting a non-user message
+  // The TeamThinkingProcess component handles showing appropriate state based on available data
+  const showTeamThinking = !isCreatedByUser && isSubmitting;
 
   const unfinishedMessage = useMemo(
     () =>
@@ -201,7 +185,12 @@ const MessageContent = ({
         text={regularContent}
         {...props}
       />
-      {/* Team thinking process - shown below message content during team collaboration */}
+      {/* FORCE TEST - NO CONDITIONS AT ALL */}
+      {!isCreatedByUser && (
+        <div style={{ background: 'red', color: 'white', padding: '20px', margin: '10px 0' }}>
+          🚨 TEST: isSubmitting={String(isSubmitting)} | showTeamThinking={String(showTeamThinking)}
+        </div>
+      )}
       {showTeamThinking && (
         <TeamThinkingProcess isSubmitting={true} />
       )}
