@@ -4,7 +4,7 @@ const { createAgent, getAgent } = require('~/models/Agent');
 const { COORDINATOR_SYSTEM_PROMPT } = require('./prompts');
 
 const COORDINATOR_AGENT_ID = 'team_coordinator_agent';
-const DEFAULT_ANTHROPIC_MODEL = anthropicSettings.model.default; // 'claude-sonnet-4-20250514'
+const COORDINATOR_ANTHROPIC_MODEL = 'claude-sonnet-4-5';
 
 /**
  * Creates or retrieves the Team Coordinator agent
@@ -29,7 +29,7 @@ const createCoordinatorAgent = async (userId) => {
         'Coordinates team creation by analyzing documents and identifying required professional roles',
       instructions: COORDINATOR_SYSTEM_PROMPT,
       provider: EModelEndpoint.anthropic,
-      model: DEFAULT_ANTHROPIC_MODEL,
+      model: COORDINATOR_ANTHROPIC_MODEL,
       author: userId,
       isTeamCoordinator: true,
       category: 'system',
@@ -66,5 +66,5 @@ module.exports = {
   createCoordinatorAgent,
   getCoordinatorAgent,
   COORDINATOR_AGENT_ID,
-  DEFAULT_ANTHROPIC_MODEL,
+  COORDINATOR_ANTHROPIC_MODEL,
 };

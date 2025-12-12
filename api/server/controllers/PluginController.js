@@ -131,10 +131,7 @@ const getAvailableTools = async (req, res) => {
 
         toolsOutput.push(plugin);
       } catch (error) {
-        logger.error(
-          `[getAvailableTools] Error processing plugin ${plugin.pluginKey}:`,
-          error,
-        );
+        logger.error(`[getAvailableTools] Error processing plugin ${plugin.pluginKey}:`, error);
         // Continue to next plugin instead of failing entirely
         continue;
       }

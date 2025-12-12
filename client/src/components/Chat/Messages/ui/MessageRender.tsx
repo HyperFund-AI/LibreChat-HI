@@ -188,14 +188,15 @@ const MessageRender = memo(
                   message={msg}
                   enterEdit={enterEdit}
                   error={!!(msg.error ?? false)}
-                  isSubmitting={effectiveIsSubmitting}
+                  isSubmitting={effectiveIsSubmitting || isSubmittingFamily}
                   unfinished={msg.unfinished ?? false}
                   isCreatedByUser={msg.isCreatedByUser ?? true}
                   siblingIdx={siblingIdx ?? 0}
                   setSiblingIdx={setSiblingIdx ?? (() => ({}))}
                 />
-                {/* Team document actions for team collaboration responses */}
+                {/* Team document actions for completed team collaboration responses */}
                 {!msg.isCreatedByUser &&
+                  !effectiveIsSubmitting &&
                   (msg.sender === 'Team' || msg.model === 'team-collaboration') && (
                     <TeamDocumentActions
                       content={msg.text || ''}
@@ -205,7 +206,6 @@ const MessageRender = memo(
                   )}
               </MessageContext.Provider>
             </div>
-
             {hasNoChildren && (isSubmittingFamily === true || effectiveIsSubmitting) ? (
               <PlaceholderRow isCard={isCard} />
             ) : (

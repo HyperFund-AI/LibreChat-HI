@@ -49,6 +49,9 @@ export default function Message(props: TMessageProps) {
     let result = '';
     if (isCreatedByUser === true) {
       result = localize('com_user_message');
+    } else if (message?.sender === 'Team' || message?.model === 'team-collaboration') {
+      // Team collaboration messages always show "Team"
+      result = 'Team';
     } else if (assistant) {
       result = assistant.name ?? localize('com_ui_assistant');
     } else if (agent) {
@@ -64,7 +67,7 @@ export default function Message(props: TMessageProps) {
     }
 
     return result;
-  }, [assistant, agent, isCreatedByUser, localize, message?.sender, isAdmin]);
+  }, [assistant, agent, isCreatedByUser, localize, message?.sender, message?.model, isAdmin]);
 
   const iconData: TMessageIcon = useMemo(
     () => ({

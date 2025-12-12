@@ -3,6 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { DelayedRender } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
+import TeamThinkingProcess from '~/components/Chat/Messages/ui/TeamThinkingProcess';
 import Error from '~/components/Messages/Content/Error';
 import { useMessageContext } from '~/Providers';
 import MarkdownLite from './MarkdownLite';
@@ -143,7 +144,7 @@ const MessageContent = ({
   isLast,
   ...props
 }: TMessageContentProps) => {
-  const { message } = props;
+  const { message, isCreatedByUser } = props;
   const { messageId } = message;
 
   const { thinkingContent, regularContent } = useMemo(() => parseThinkingContent(text), [text]);

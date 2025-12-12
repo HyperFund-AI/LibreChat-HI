@@ -59,6 +59,10 @@ export default function SearchMessage({ message }: Pick<TMessageProps, 'message'
         ? (user?.name ?? '') || (user?.username ?? '')
         : localize('com_user_message');
     }
+    // Team collaboration messages always show "Team"
+    if (message?.sender === 'Team' || message?.model === 'team-collaboration') {
+      return 'Team';
+    }
     // For regular users, replace model names with "Hyper Intelligence"
     const sender = message?.sender ?? '';
     if (!isAdmin && sender) {
@@ -68,6 +72,7 @@ export default function SearchMessage({ message }: Pick<TMessageProps, 'message'
   }, [
     message?.isCreatedByUser,
     message?.sender,
+    message?.model,
     UsernameDisplay,
     user?.name,
     user?.username,

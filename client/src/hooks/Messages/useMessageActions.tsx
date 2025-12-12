@@ -126,7 +126,12 @@ export default function useMessageActions(props: TMessageActions) {
   const messageLabel = useMemo(() => {
     if (message?.isCreatedByUser === true) {
       return UsernameDisplay ? (user?.name ?? '') || user?.username : localize('com_user_message');
-    } else if (agent) {
+    }
+    // Check for team collaboration messages first
+    if (message?.sender === 'Team' || message?.model === 'team-collaboration') {
+      return 'Team';
+    }
+    if (agent) {
       return agent.name ?? 'Assistant';
     } else if (assistant) {
       return assistant.name ?? 'Assistant';

@@ -289,7 +289,8 @@ function createToolEndCallback({ req, res, artifactPromises }) {
       try {
         // Tool output can be in output.output (string) or output.content (string)
         const outputContent = output.output || output.content || '{}';
-        const result = typeof outputContent === 'string' ? JSON.parse(outputContent) : outputContent;
+        const result =
+          typeof outputContent === 'string' ? JSON.parse(outputContent) : outputContent;
 
         if (result.success && result.file?.file_id) {
           const { findFileById } = require('~/models/File');
@@ -313,9 +314,7 @@ function createToolEndCallback({ req, res, artifactPromises }) {
             res.write(`event: attachment\ndata: ${JSON.stringify(fileMetadata)}\n\n`);
             return fileMetadata;
           } else {
-            logger.warn(
-              `[PDFGenerator] File not found in database: ${result.file.file_id}`,
-            );
+            logger.warn(`[PDFGenerator] File not found in database: ${result.file.file_id}`);
           }
         } else {
           logger.warn('[PDFGenerator] Invalid result structure:', result);

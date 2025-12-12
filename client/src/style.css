@@ -766,6 +766,45 @@ pre {
   animation: none;
 }
 
+/* Team Thinking Process Animation */
+.team-thinking-enter {
+  opacity: 0;
+  transform: translateY(-10px);
+  max-height: 0;
+  overflow: hidden;
+}
+
+.team-thinking-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  max-height: 1000px;
+  transition: opacity 300ms ease-out, transform 300ms ease-out, max-height 300ms ease-out;
+}
+
+.team-thinking-enter-done {
+  opacity: 1;
+  transform: translateY(0);
+  max-height: none;
+}
+
+.team-thinking-exit {
+  opacity: 1;
+  transform: translateY(0);
+  max-height: 1000px;
+}
+
+.team-thinking-exit-active {
+  opacity: 0;
+  transform: translateY(-10px);
+  max-height: 0;
+  overflow: hidden;
+  transition: opacity 300ms ease-in, transform 300ms ease-in, max-height 300ms ease-in;
+}
+
+.team-thinking-exit-done {
+  display: none;
+}
+
 .blink {
   animation: blink 1s linear infinite;
 }
