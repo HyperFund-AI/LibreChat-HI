@@ -185,12 +185,6 @@ const MessageContent = ({
         text={regularContent}
         {...props}
       />
-      {/* FORCE TEST - NO CONDITIONS AT ALL */}
-      {!isCreatedByUser && (
-        <div style={{ background: 'red', color: 'white', padding: '20px', margin: '10px 0' }}>
-          🚨 TEST: isSubmitting={String(isSubmitting)} | showTeamThinking={String(showTeamThinking)}
-        </div>
-      )}
       {showTeamThinking && (
         <TeamThinkingProcess isSubmitting={true} />
       )}

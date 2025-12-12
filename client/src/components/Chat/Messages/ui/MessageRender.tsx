@@ -180,10 +180,6 @@ const MessageRender = memo(
                 }}
               >
                 {msg.plugin && <Plugin plugin={msg.plugin} />}
-                {/* DEBUG TEST */}
-                <div style={{ background: 'blue', color: 'white', padding: '10px', margin: '5px 0', fontSize: '12px' }}>
-                  DEBUG: isCreatedByUser={String(msg.isCreatedByUser)} | effectiveIsSubmitting={String(effectiveIsSubmitting)} | isSubmittingFamily={String(isSubmittingFamily)} | sender={msg.sender}
-                </div>
                 <MessageContent
                   ask={ask}
                   edit={edit}

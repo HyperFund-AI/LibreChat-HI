@@ -185,11 +185,6 @@ export default function useSSE(
 
         createdHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.event != null) {
-        // Log all events for debugging
-        if (data.event.includes('thinking') || data.event.includes('agent')) {
-          console.log('[SSE] Event received:', data.event, data.data?.agent);
-        }
-        
         // Handle team collaboration events
         if (
           data.event === 'on_thinking' ||
