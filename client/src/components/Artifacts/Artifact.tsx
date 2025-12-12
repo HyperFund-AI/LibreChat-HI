@@ -4,11 +4,11 @@ import { visit } from 'unist-util-visit';
 import { useSetRecoilState } from 'recoil';
 import { useLocation } from 'react-router-dom';
 import type { Pluggable } from 'unified';
-import type { Artifact } from '~/common';
+import type { Artifact as ArtifactType } from '~/common';
 import { useMessageContext, useArtifactContext } from '~/Providers';
 import { logger, extractContent, isArtifactRoute } from '~/utils';
 import { artifactsState } from '~/store/artifacts';
-import ArtifactButton from './ArtifactButton';
+import ArtifactDocumentIndicator from './ArtifactDocumentIndicator';
 
 export const artifactPlugin: Pluggable = () => {
   return (tree) => {
@@ -42,7 +42,7 @@ const defaultIdentifier = 'lc-no-identifier';
 export function Artifact({
   node: _node,
   ...props
-}: Artifact & {
+}: ArtifactType & {
   children: React.ReactNode | { props: { children: React.ReactNode } };
   node: unknown;
 }) {
@@ -52,7 +52,7 @@ export function Artifact({
   const artifactIndex = useRef(getNextIndex(false)).current;
 
   const setArtifacts = useSetRecoilState(artifactsState);
-  const [artifact, setArtifact] = useState<Artifact | null>(null);
+  const [artifact, setArtifact] = useState<ArtifactType | null>(null);
 
   const throttledUpdateRef = useRef(
     throttle((updateFn: () => void) => {
@@ -77,7 +77,7 @@ export function Artifact({
         return;
       }
 
-      const currentArtifact: Artifact = {
+      const currentArtifact: ArtifactType = {
         id: artifactKey,
         identifier,
         title,
@@ -124,5 +124,5 @@ export function Artifact({
     updateArtifact();
   }, [updateArtifact, resetCounter]);
 
-  return <ArtifactButton artifact={artifact} />;
+  return <ArtifactDocumentIndicator artifact={artifact} />;
 }

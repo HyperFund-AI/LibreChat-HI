@@ -299,13 +299,12 @@ export default function Artifacts() {
               />
             </div>
 
-            <div
+            <output
               className={cn(
                 'absolute inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm transition-opacity duration-300 ease-in-out',
                 isRefreshing ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
               )}
               aria-hidden={!isRefreshing}
-              role="status"
             >
               <div
                 className={cn(
@@ -315,7 +314,7 @@ export default function Artifacts() {
               >
                 <Spinner size={24} />
               </div>
-            </div>
+            </output>
           </div>
 
           {isMobile && (
