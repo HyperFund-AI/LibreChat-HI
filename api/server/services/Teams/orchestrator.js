@@ -1,7 +1,25 @@
+const { fixJSONObject } = require('~/server/utils/jsonRepair');
+const { betaZodOutputFormat } = require('@anthropic-ai/sdk/helpers/beta/zod');
+const { z } = require('zod');
 const { logger } = require('@librechat/data-schemas');
 const Anthropic = require('@anthropic-ai/sdk');
 
-const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
+const ORCHESTRATOR_ANTHROPIC_MODEL = 'claude-sonnet-4-5';
+
+const zLeadAnalysisSchema = z.object({
+  analysis: z.string().describe('Brief analysis of what the objective requires (1-2 sentences)'),
+  selectedSpecialists: z
+    .array(
+      z.number().int().min(1),
+      'Selected specialists must be an array of non-negative integers',
+    )
+    .min(1)
+    .describe('Array of specialist IDs, e.g., [1, 2]'),
+  assignments: z
+    .record(z.number().nonnegative(), z.string().describe('Specific task for this specialist'))
+    .describe('Specialist-to-task dictionary'),
+  deliverableOutline: z.string().describe('"Brief outline of the final deliverable structure"'),
+});
 
 /**
  * Team Orchestrator - Smart Collaboration Flow with Visible Progress
@@ -40,34 +58,29 @@ You are the Project Lead. Analyze the objective and decide which specialists are
 Available Specialists:
 ${specialistList}
 
-Respond in this EXACT JSON format:
-{
-  "analysis": "Brief analysis of what the objective requires (1-2 sentences)",
-  "selectedSpecialists": [1, 2],
-  "assignments": {
-    "1": "Specific task for specialist 1",
-    "2": "Specific task for specialist 2"
-  },
-  "deliverableOutline": "Brief outline of the final deliverable structure"
-}
+Respond in JSON format according to schema.
 
 Only select specialists whose expertise is genuinely needed.`;
 
   const client = new Anthropic({ apiKey });
 
-  const response = await client.messages.create({
-    model: DEFAULT_ANTHROPIC_MODEL,
+  const response = await client.beta.messages.parse({
+    model: ORCHESTRATOR_ANTHROPIC_MODEL,
     max_tokens: 1000,
     system: systemPrompt,
     messages: [{ role: 'user', content: `Objective: ${userMessage}` }],
+    output_format: betaZodOutputFormat(zLeadAnalysisSchema),
   });
 
   const responseText = response.content[0]?.text || '';
 
   try {
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    const jsonMatch = fixJSONObject(responseText);
     if (jsonMatch) {
-      const plan = JSON.parse(jsonMatch[0]);
+      const jsonMatch = responseText.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
+      const jsonText = jsonMatch ? jsonMatch[1] : responseText;
+      const plan = JSON.parse(fixJSONObject(jsonText)); // zLeadAnalysisSchema.parse();
+      console.log('Parsed ', plan);
       if (onThinking) {
         onThinking({
           agent: lead.name,
@@ -120,7 +133,7 @@ Guidelines:
   const client = new Anthropic({ apiKey });
 
   const response = await client.messages.create({
-    model: agent.model || DEFAULT_ANTHROPIC_MODEL,
+    model: agent.model || ORCHESTRATOR_ANTHROPIC_MODEL,
     max_tokens: 1000,
     system: systemPrompt,
     messages: [
@@ -188,7 +201,7 @@ Do NOT just combine responses. Write as if one expert authored the entire docume
 
   // Use streaming for the synthesis
   const stream = client.messages.stream({
-    model: DEFAULT_ANTHROPIC_MODEL,
+    model: ORCHESTRATOR_ANTHROPIC_MODEL,
     max_tokens: 4000,
     system: systemPrompt,
     messages: [
