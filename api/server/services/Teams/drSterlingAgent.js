@@ -4,7 +4,8 @@ const { createAgent, getAgent, updateAgent } = require('~/models/Agent');
 const { COORDINATOR_SYSTEM_PROMPT } = require('./prompts');
 
 const DR_STERLING_AGENT_ID = 'dr_sterling_coordinator';
-const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
+const DR_STERLING_ANTHROPIC_MODEL = 'claude-sonnet-4-5';
+const FAST_ANTRHOPIC_MODEL = 'claude-haiku-4-5';
 
 /**
  * Dr. Sterling Agent Configuration
@@ -13,14 +14,14 @@ const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
 const DR_STERLING_CONFIG = {
   id: DR_STERLING_AGENT_ID,
   name: 'Dr. Alexandra Sterling',
-  description: `Universal Project Coordinator and Strategic AI Orchestration Director. 
-I help you build "Superhuman Teams" of top 0.1% experts for any project. 
+  description: `Universal Project Coordinator and Strategic AI Orchestration Director.
+I help you build "Superhuman Teams" of top 0.1% experts for any project.
 Upload your document and I'll guide you through a discovery process to design the perfect team.`,
   instructions: COORDINATOR_SYSTEM_PROMPT,
   provider: EModelEndpoint.anthropic,
-  model: DEFAULT_ANTHROPIC_MODEL,
+  model: DR_STERLING_ANTHROPIC_MODEL,
   model_parameters: {
-    model: DEFAULT_ANTHROPIC_MODEL,
+    model: DR_STERLING_ANTHROPIC_MODEL,
     // Note: temperature is not set because it's incompatible with Anthropic's thinking mode
     max_tokens: 8192,
   },
@@ -502,7 +503,7 @@ const convertParsedTeamToAgents = (parsedTeam, conversationId) => {
       name: member.name,
       instructions: instructions,
       provider: EModelEndpoint.anthropic,
-      model: DEFAULT_ANTHROPIC_MODEL,
+      model: DR_STERLING_ANTHROPIC_MODEL,
       responsibilities: member.expertise || '',
       tier: member.tier || '4',
       behavioralLevel: member.behavioralLevel || 'NONE',
@@ -518,5 +519,6 @@ module.exports = {
   isTeamRelatedMessage,
   mergeTeamMembers,
   DR_STERLING_AGENT_ID,
-  DEFAULT_ANTHROPIC_MODEL,
+  DR_STERLING_ANTHROPIC_MODEL,
+  FAST_ANTRHOPIC_MODEL,
 };

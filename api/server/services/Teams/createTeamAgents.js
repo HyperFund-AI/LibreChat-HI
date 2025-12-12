@@ -1,6 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint } = require('librechat-data-provider');
-const { DEFAULT_ANTHROPIC_MODEL } = require('./createCoordinatorAgent');
+const { COORDINATOR_ANTHROPIC_MODEL } = require('./createCoordinatorAgent');
 
 /**
  * Creates ephemeral team agent configurations based on analysis results
@@ -15,7 +15,7 @@ const createTeamAgents = async ({
   conversationId,
   roles,
   provider = EModelEndpoint.anthropic,
-  model = DEFAULT_ANTHROPIC_MODEL,
+  model = COORDINATOR_ANTHROPIC_MODEL,
 }) => {
   try {
     logger.debug(

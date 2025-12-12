@@ -2,8 +2,10 @@ const {
   createCoordinatorAgent,
   getCoordinatorAgent,
   COORDINATOR_AGENT_ID,
-  DEFAULT_ANTHROPIC_MODEL,
+  ORCHESTRATOR_ANTHROPIC_MODEL,
 } = require('./createCoordinatorAgent');
+
+const DEFAULT_ANTHROPIC_MODEL = ORCHESTRATOR_ANTHROPIC_MODEL;
 const { analyzeFile } = require('./analyzeFile');
 const { createTeamAgents, createTeamEdges } = require('./createTeamAgents');
 const { FILE_ANALYSIS_PROMPT, COORDINATOR_SYSTEM_PROMPT } = require('./prompts');
