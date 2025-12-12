@@ -150,7 +150,7 @@ Your final expert analysis/output here in Markdown format.
 
 Guidelines:
 - Put your reasoning process in the THINKING section
-- Put your final deliverable in the OUTPUT section  
+- Put your final deliverable in the OUTPUT section
 - Focus ONLY on your assigned area
 - Be specific and data-driven
 - Use bullet points in the output
@@ -324,7 +324,16 @@ Create a UNIFIED document that:
 4. Is written as ONE coherent narrative
 5. Uses proper Markdown formatting
 
-Do NOT just combine responses. Write as if one expert authored the entire document.`;
+Do NOT just combine responses. Write as if one expert authored the entire document.
+The contents of the document should be wrapped around the following tag in order to display it as an artifact:
+
+:::artifact{identifier="unique-document-identifier" type="text/markdown" title="Document Title.md"}
+\`\`\`markdown
+Document contents in markdown
+\`\`\`
+:::
+
+Only wrap it in the format specified, do not include additional code-tags or other syntax.`;
 
   const client = new Anthropic({ apiKey });
 
