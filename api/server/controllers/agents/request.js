@@ -129,7 +129,7 @@ async function handleTeamOrchestration(
           thinkingLength: thinking.thinking?.length || 0,
           messagePreview: thinking.message?.substring(0, 50),
         });
-        
+
         // Send as a "step" event to show progress
         const eventPayload = {
           event: 'on_thinking',
@@ -141,8 +141,11 @@ async function handleTeamOrchestration(
             thinking: thinking.thinking || thinking.message, // Include full thinking text if available
           },
         };
-        
-        logger.info(`[handleTeamOrchestration] Sending event via SSE:`, JSON.stringify(eventPayload).substring(0, 200));
+
+        logger.info(
+          `[handleTeamOrchestration] Sending event via SSE:`,
+          JSON.stringify(eventPayload).substring(0, 200),
+        );
         sendEvent(res, eventPayload);
       },
 

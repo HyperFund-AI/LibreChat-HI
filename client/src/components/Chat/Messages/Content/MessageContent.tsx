@@ -150,7 +150,6 @@ const MessageContent = ({
   const { thinkingContent, regularContent } = useMemo(() => parseThinkingContent(text), [text]);
   const showRegularCursor = useMemo(() => isLast && isSubmitting, [isLast, isSubmitting]);
 
-
   const unfinishedMessage = useMemo(
     () =>
       !isSubmitting && unfinished ? (

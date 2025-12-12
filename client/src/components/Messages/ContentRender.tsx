@@ -1,6 +1,7 @@
 import { useCallback, useMemo, memo } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
+import { CSSTransition } from 'react-transition-group';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
@@ -169,10 +170,19 @@ const ContentRender = memo(
 
           <div className="flex flex-col gap-1">
             <div className="flex max-w-full flex-grow flex-col gap-0">
-               {/* Team thinking process - show ONLY for Team messages while submitting */}
-               {!msg.isCreatedByUser && isSubmitting && (msg.sender === 'Team' || msg.model === 'team-collaboration') && (
+              {/* Team thinking process - show ONLY for Team messages while submitting */}
+              <CSSTransition
+                in={
+                  !msg.isCreatedByUser &&
+                  isSubmitting &&
+                  (msg.sender === 'Team' || msg.model === 'team-collaboration')
+                }
+                timeout={300}
+                classNames="team-thinking"
+                unmountOnExit
+              >
                 <TeamThinkingProcess isSubmitting={true} />
-              )}
+              </CSSTransition>
               <ContentParts
                 edit={edit}
                 isLast={isLast}

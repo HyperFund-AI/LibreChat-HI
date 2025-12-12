@@ -4,7 +4,14 @@ export interface TeamThinkingStep {
   id: string;
   agent: string;
   role?: string;
-  action: 'analyzing' | 'planned' | 'working' | 'completed' | 'synthesizing' | 'complete' | 'thinking';
+  action:
+    | 'analyzing'
+    | 'planned'
+    | 'working'
+    | 'completed'
+    | 'synthesizing'
+    | 'complete'
+    | 'thinking';
   message: string;
   thinking?: string; // Full thinking process in Markdown format
   timestamp: number;

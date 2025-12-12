@@ -197,8 +197,9 @@ export default function useSSE(
           setTeamCollaboration((prev: TeamCollaborationState) => {
             const agentName = eventData.agent || eventData.agentName || 'Team';
             const thinkingText = eventData.thinking || '';
-            const action = eventData.action || (data.event === 'on_agent_start' ? 'working' : 'completed');
-            
+            const action =
+              eventData.action || (data.event === 'on_agent_start' ? 'working' : 'completed');
+
             // Determine phase based on event
             let phase = prev.phase;
             if (data.event === 'on_thinking') {
@@ -217,7 +218,7 @@ export default function useSSE(
             const updatedAgentThinking = { ...prev.agentThinking };
             if (thinkingText && action === 'thinking') {
               updatedAgentThinking[agentName] = thinkingText;
-              
+
               // For thinking events, only update agentThinking, don't add to steps
               return {
                 ...prev,

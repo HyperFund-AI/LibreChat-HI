@@ -61,20 +61,20 @@ class PDFGenerator extends Tool {
           .string()
           .describe(
             'Image URL (http:// or https://) or base64-encoded image data (data:image/...;base64,... format). ' +
-            'IMPORTANT: When using image generation tools (DALL-E, Flux, etc.) in agent mode, they return base64 data URIs. ' +
-            'ALWAYS prefer using base64 data URIs (data:image/...;base64,...) over URLs when available, as URLs may require authentication or expire. ' +
-            'You can obtain images by: 1) Using image generation tools which return base64 data URIs (preferred), ' +
-            '2) Using web_search tools to find publicly accessible image URLs, ' +
-            '3) Using any publicly accessible image URL from the internet. ' +
-            'Can include multiple images.',
+              'IMPORTANT: When using image generation tools (DALL-E, Flux, etc.) in agent mode, they return base64 data URIs. ' +
+              'ALWAYS prefer using base64 data URIs (data:image/...;base64,...) over URLs when available, as URLs may require authentication or expire. ' +
+              'You can obtain images by: 1) Using image generation tools which return base64 data URIs (preferred), ' +
+              '2) Using web_search tools to find publicly accessible image URLs, ' +
+              '3) Using any publicly accessible image URL from the internet. ' +
+              'Can include multiple images.',
           ),
       )
       .optional()
       .describe(
         'Optional array of image URLs or base64-encoded images to include in the PDF. ' +
-        'Images will be embedded in the document. ' +
-        'IMPORTANT: Prefer base64 data URIs (data:image/...;base64,...) from image generation tools over URLs, ' +
-        'as URLs from services like OpenAI may require authentication or expire quickly.',
+          'Images will be embedded in the document. ' +
+          'IMPORTANT: Prefer base64 data URIs (data:image/...;base64,...) from image generation tools over URLs, ' +
+          'as URLs from services like OpenAI may require authentication or expire quickly.',
       ),
   });
 
@@ -139,9 +139,7 @@ class PDFGenerator extends Tool {
         // Add authentication headers for OpenAI URLs if API key is available
         if (isOpenAIUrl) {
           const openAIApiKey =
-            process.env.DALLE3_API_KEY ||
-            process.env.DALLE_API_KEY ||
-            process.env.OPENAI_API_KEY;
+            process.env.DALLE3_API_KEY || process.env.DALLE_API_KEY || process.env.OPENAI_API_KEY;
           if (openAIApiKey) {
             requestConfig.headers = {
               Authorization: `Bearer ${openAIApiKey}`,
@@ -167,7 +165,9 @@ class PDFGenerator extends Tool {
                   timeout: 30000,
                 });
                 imageBuffer = Buffer.from(fallbackResponse.data, 'binary');
-                logger.info('[PDFGenerator] Successfully fetched OpenAI image without authentication');
+                logger.info(
+                  '[PDFGenerator] Successfully fetched OpenAI image without authentication',
+                );
               } catch (fallbackError) {
                 throw new Error(
                   'OpenAI image URL requires authentication or has expired. ' +
@@ -203,9 +203,7 @@ class PDFGenerator extends Tool {
         const convertedBuffer = await sharp(imageBuffer).png().toBuffer();
         return convertedBuffer;
       } catch (sharpError) {
-        logger.warn(
-          `[PDFGenerator] Sharp conversion failed, trying JPEG: ${sharpError.message}`,
-        );
+        logger.warn(`[PDFGenerator] Sharp conversion failed, trying JPEG: ${sharpError.message}`);
         // Fallback to JPEG if PNG conversion fails
         try {
           const jpegBuffer = await sharp(imageBuffer).jpeg().toBuffer();
@@ -216,7 +214,10 @@ class PDFGenerator extends Tool {
         }
       }
     } catch (error) {
-      logger.error(`[PDFGenerator] Error loading image from ${imageSource.substring(0, 50)}:`, error);
+      logger.error(
+        `[PDFGenerator] Error loading image from ${imageSource.substring(0, 50)}:`,
+        error,
+      );
       throw new Error(`Failed to load image: ${error.message}`);
     }
   }
