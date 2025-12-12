@@ -3,6 +3,8 @@ import { useRecoilValue } from 'recoil';
 import { DelayedRender } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
+import TeamThinkingProcess from '~/components/Chat/Messages/ui/TeamThinkingProcess';
+import { teamCollaborationAtom } from '~/store/teamCollaboration';
 import Error from '~/components/Messages/Content/Error';
 import { useMessageContext } from '~/Providers';
 import MarkdownLite from './MarkdownLite';
@@ -143,11 +145,30 @@ const MessageContent = ({
   isLast,
   ...props
 }: TMessageContentProps) => {
-  const { message } = props;
+  const { message, isCreatedByUser } = props;
   const { messageId } = message;
+  const teamCollaboration = useRecoilValue(teamCollaborationAtom);
 
   const { thinkingContent, regularContent } = useMemo(() => parseThinkingContent(text), [text]);
   const showRegularCursor = useMemo(() => isLast && isSubmitting, [isLast, isSubmitting]);
+
+  // Check if team collaboration is active - this is the primary check
+  const isTeamCollaborationActive = teamCollaboration.isActive || Object.keys(teamCollaboration.agentThinking).length > 0;
+  
+  // Show team thinking process when collaboration is active and not a user message
+  const showTeamThinking = !isCreatedByUser && isSubmitting && isTeamCollaborationActive;
+
+  // Debug logging for team thinking - only log when relevant
+  if (isSubmitting && !isCreatedByUser) {
+    console.log('[MessageContent] TEAM THINKING CHECK:', {
+      messageId,
+      isSubmitting,
+      isCreatedByUser,
+      collaborationActive: teamCollaboration.isActive,
+      agentThinkingCount: Object.keys(teamCollaboration.agentThinking).length,
+      showTeamThinking,
+    });
+  }
 
   const unfinishedMessage = useMemo(
     () =>
@@ -180,6 +201,10 @@ const MessageContent = ({
         text={regularContent}
         {...props}
       />
+      {/* Team thinking process - shown below message content during team collaboration */}
+      {showTeamThinking && (
+        <TeamThinkingProcess isSubmitting={true} />
+      )}
       {unfinishedMessage}
     </>
   );

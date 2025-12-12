@@ -126,6 +126,18 @@ export default function useSSE(
     sse.addEventListener('message', (e: MessageEvent) => {
       const data = JSON.parse(e.data);
 
+      console.log('[useSSE] Received event:', data.event || 'message', data); 
+      
+      // Log specifically if this is a thinking event with action: thinking
+      if (data.event === 'on_thinking' && data.data?.action === 'thinking') {
+        console.log('[useSSE] THINKING EVENT RECEIVED:', {
+          agent: data.data.agent,
+          action: data.data.action,
+          thinkingLength: data.data.thinking?.length || 0,
+          messageLength: data.data.message?.length || 0,
+        });
+      }
+      
       if (data.final != null) {
         clearDraft(submission.conversation?.conversationId);
         const { plugins, teamCreated } = data;
@@ -160,6 +172,7 @@ export default function useSSE(
             steps: [],
             currentAgent: null,
             phase: 'idle',
+            agentThinking: {},
           });
         }, 3000);
 
@@ -196,38 +209,62 @@ export default function useSSE(
           const conversationId = submission?.conversation?.conversationId || '';
 
           setTeamCollaboration((prev: TeamCollaborationState) => {
+            const agentName = eventData.agent || eventData.agentName || 'Team';
+            const thinkingText = eventData.thinking || '';
+            const action = eventData.action || (data.event === 'on_agent_start' ? 'working' : 'completed');
+            
             // Determine phase based on event
             let phase = prev.phase;
             if (data.event === 'on_thinking') {
-              if (eventData.action === 'analyzing' || eventData.action === 'planned') {
+              if (action === 'analyzing' || action === 'planned') {
                 phase = 'planning';
-              } else if (eventData.action === 'working' || eventData.action === 'completed') {
+              } else if (action === 'working' || action === 'completed' || action === 'thinking') {
                 phase = 'specialist-work';
-              } else if (eventData.action === 'synthesizing') {
+              } else if (action === 'synthesizing') {
                 phase = 'synthesis';
-              } else if (eventData.action === 'complete') {
+              } else if (action === 'complete') {
                 phase = 'complete';
               }
             }
 
+            // Update agent thinking map when we receive thinking content (don't store in steps)
+            const updatedAgentThinking = { ...prev.agentThinking };
+            if (thinkingText && action === 'thinking') {
+              updatedAgentThinking[agentName] = thinkingText;
+              console.log('[useSSE] Thinking update for', agentName, ':', thinkingText.length, 'chars');
+              
+              // For thinking events, only update agentThinking, don't add to steps
+              return {
+                ...prev,
+                isActive: true,
+                conversationId,
+                currentAgent: agentName,
+                phase,
+                agentThinking: updatedAgentThinking,
+              };
+            }
+
+            // For non-thinking events (working, completed, etc.), add to steps
             const newStep: TeamThinkingStep = {
               id: v4(),
-              agent: eventData.agent || eventData.agentName || 'Team',
+              agent: agentName,
               role: eventData.role || eventData.agentRole || '',
-              action:
-                eventData.action || (data.event === 'on_agent_start' ? 'working' : 'completed'),
+              action,
               message:
                 eventData.message ||
-                `${eventData.agentName || 'Agent'} ${data.event === 'on_agent_start' ? 'started working' : 'finished'}`,
+                `${agentName} ${data.event === 'on_agent_start' ? 'started working' : 'finished'}`,
               timestamp: Date.now(),
             };
 
+            console.log('[useSSE] Adding step:', action, 'for', agentName);
+            
             return {
               isActive: true,
               conversationId,
               steps: [...prev.steps, newStep],
-              currentAgent: eventData.agent || eventData.agentName || null,
+              currentAgent: agentName,
               phase,
+              agentThinking: updatedAgentThinking,
             };
           });
         } else {
@@ -244,6 +281,7 @@ export default function useSSE(
           steps: [],
           currentAgent: null,
           phase: 'idle',
+          agentThinking: {},
         });
 
         /* synchronize messages to Assistants API as well as with real DB ID's */

@@ -92,9 +92,11 @@ Only select specialists whose expertise is genuinely needed.`;
 };
 
 /**
- * Phase 2: Execute selected specialists with visible progress
+ * Phase 2: Execute selected specialists with visible progress and streaming thinking
  */
 const executeSpecialist = async ({ agent, assignment, userMessage, apiKey, onThinking }) => {
+  logger.info(`[executeSpecialist] Called for ${agent.name}, onThinking callback: ${onThinking ? 'present' : 'MISSING'}`);
+  
   if (onThinking) {
     onThinking({
       agent: agent.name,
@@ -110,18 +112,37 @@ ${agent.instructions || ''}
 
 Your expertise: ${agent.expertise || agent.responsibilities || 'Specialist'}
 
+IMPORTANT: Structure your response in two clear sections:
+
+<THINKING>
+Your step-by-step thinking process here. Show your reasoning, considerations, and approach.
+</THINKING>
+
+<OUTPUT>
+Your final expert analysis/output here in Markdown format.
+</OUTPUT>
+
 Guidelines:
+- Put your reasoning process in the THINKING section
+- Put your final deliverable in the OUTPUT section  
 - Focus ONLY on your assigned area
 - Be specific and data-driven
-- Use bullet points
-- Keep response focused (200-300 words)
+- Use bullet points in the output
+- Keep output focused (200-300 words)
 - Provide expert insights`;
 
   const client = new Anthropic({ apiKey });
 
-  const response = await client.messages.create({
+  let accumulatedText = '';
+  let thinkingText = '';
+  let outputText = '';
+  let lastThinkingSent = '';
+  let chunkCount = 0;
+
+  // Use streaming to get real-time thinking process
+  const stream = client.messages.stream({
     model: agent.model || DEFAULT_ANTHROPIC_MODEL,
-    max_tokens: 1000,
+    max_tokens: 2000,
     system: systemPrompt,
     messages: [
       {
@@ -131,7 +152,84 @@ Guidelines:
     ],
   });
 
-  const result = response.content[0]?.text || '';
+  logger.info(`[executeSpecialist] Starting stream for ${agent.name}`);
+  
+  // Stream each chunk and extract thinking in real-time
+  for await (const event of stream) {
+    if (event.type === 'content_block_delta' && event.delta?.text) {
+      const chunk = event.delta.text;
+      accumulatedText += chunk;
+      chunkCount++;
+
+      // Log every 10 chunks to show progress
+      if (chunkCount % 10 === 0) {
+        logger.info(`[executeSpecialist] ${agent.name} received ${chunkCount} chunks, ${accumulatedText.length} chars total`);
+      }
+
+      // Try to extract thinking section as it streams
+      const thinkingMatch = accumulatedText.match(/<THINKING>([\s\S]*?)(?:<\/THINKING>|$)/i);
+      if (thinkingMatch && thinkingMatch[1]) {
+        const currentThinking = thinkingMatch[1].trim();
+        
+        // Send updates every few chunks or when thinking content grows significantly
+        if (currentThinking.length > lastThinkingSent.length + 50 || chunkCount % 5 === 0) {
+          thinkingText = currentThinking;
+          lastThinkingSent = currentThinking;
+          
+          if (onThinking) {
+            logger.info(`[executeSpecialist] Sending thinking update for ${agent.name}: ${currentThinking.length} chars`);
+            onThinking({
+              agent: agent.name,
+              role: agent.role,
+              action: 'thinking',
+              message: currentThinking.substring(0, 100) + (currentThinking.length > 100 ? '...' : ''),
+              thinking: currentThinking,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // Final extraction
+  const finalThinkingMatch = accumulatedText.match(/<THINKING>([\s\S]*?)<\/THINKING>/i);
+  const finalOutputMatch = accumulatedText.match(/<OUTPUT>([\s\S]*?)<\/OUTPUT>/i);
+
+  if (finalThinkingMatch) {
+    thinkingText = finalThinkingMatch[1].trim();
+  }
+  if (finalOutputMatch) {
+    outputText = finalOutputMatch[1].trim();
+  }
+
+  logger.info(`[executeSpecialist] ${agent.name} stream complete. Total: ${accumulatedText.length} chars, ${chunkCount} chunks`);
+  logger.info(`[executeSpecialist] ${agent.name} has THINKING tag: ${accumulatedText.includes('<THINKING>')}, has OUTPUT tag: ${accumulatedText.includes('<OUTPUT>')}`);
+  
+  // If no tags found, try to use the whole response as output
+  if (!outputText && !thinkingText) {
+    logger.warn(`[executeSpecialist] No THINKING/OUTPUT tags found for ${agent.name}, using raw response`);
+    outputText = accumulatedText;
+  } else if (!outputText) {
+    // If we have thinking but no output, the output might come after thinking without tags
+    const afterThinking = accumulatedText.replace(/<THINKING>[\s\S]*?<\/THINKING>/i, '').trim();
+    if (afterThinking) {
+      outputText = afterThinking;
+    }
+  }
+  
+  logger.info(`[executeSpecialist] ${agent.name} final: thinking=${thinkingText.length} chars, output=${outputText.length} chars`);
+
+  // Send final thinking update if not already sent
+  if (onThinking && thinkingText && thinkingText !== lastThinkingSent) {
+    logger.debug(`[executeSpecialist] Sending final thinking for ${agent.name}: ${thinkingText.length} chars`);
+    onThinking({
+      agent: agent.name,
+      role: agent.role,
+      action: 'thinking',
+      message: thinkingText.substring(0, 100) + (thinkingText.length > 100 ? '...' : ''),
+      thinking: thinkingText,
+    });
+  }
 
   if (onThinking) {
     onThinking({
@@ -142,7 +240,10 @@ Guidelines:
     });
   }
 
-  return result;
+  logger.info(`[executeSpecialist] ${agent.name} completed - thinking: ${thinkingText.length} chars, output: ${outputText.length} chars`);
+
+  // Return only the output part (or fallback to accumulated text)
+  return outputText || accumulatedText;
 };
 
 /**
