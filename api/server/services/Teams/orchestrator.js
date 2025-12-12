@@ -1,7 +1,26 @@
+const { fixJSONObject } = require('~/server/utils/jsonRepair');
+const { betaZodOutputFormat } = require('@anthropic-ai/sdk/helpers/beta/zod');
+const { z } = require('zod');
 const { logger } = require('@librechat/data-schemas');
 const Anthropic = require('@anthropic-ai/sdk');
 
-const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
+const ORCHESTRATOR_ANTHROPIC_MODEL = 'claude-sonnet-4-5';
+
+const zLeadAnalysisSchema = z.object({
+  analysis: z.string().describe('Brief analysis of what the objective requires (1-2 sentences)'),
+  selectedSpecialists: z
+    .array(
+      z.number().int().min(1),
+      'Selected specialists must be an array of non-negative integers',
+    )
+    .min(2)
+    .max(10)
+    .describe('Array of specialist IDs. MUST select at least 2-3 specialists, e.g., [1, 2, 3]'),
+  assignments: z
+    .record(z.number().nonnegative(), z.string().describe('Specific task for this specialist'))
+    .describe('Specialist-to-task dictionary'),
+  deliverableOutline: z.string().describe('"Brief outline of the final deliverable structure"'),
+});
 
 /**
  * Team Orchestrator - Smart Collaboration Flow with Visible Progress
@@ -40,34 +59,34 @@ You are the Project Lead. Analyze the objective and decide which specialists are
 Available Specialists:
 ${specialistList}
 
-Respond in this EXACT JSON format:
-{
-  "analysis": "Brief analysis of what the objective requires (1-2 sentences)",
-  "selectedSpecialists": [1, 2],
-  "assignments": {
-    "1": "Specific task for specialist 1",
-    "2": "Specific task for specialist 2"
-  },
-  "deliverableOutline": "Brief outline of the final deliverable structure"
-}
+IMPORTANT SELECTION REQUIREMENTS:
+- You MUST select at least 2-3 specialists for every objective
+- Select specialists whose expertise is genuinely needed for comprehensive analysis
+- Consider different perspectives and areas of expertise
+- Aim for 2-3 specialists minimum, but can select more if the objective requires it
+- Each specialist should have a clear, distinct role in addressing the objective
 
-Only select specialists whose expertise is genuinely needed.`;
+Respond in JSON format according to schema.`;
 
   const client = new Anthropic({ apiKey });
 
-  const response = await client.messages.create({
-    model: DEFAULT_ANTHROPIC_MODEL,
+  const response = await client.beta.messages.parse({
+    model: ORCHESTRATOR_ANTHROPIC_MODEL,
     max_tokens: 1000,
     system: systemPrompt,
     messages: [{ role: 'user', content: `Objective: ${userMessage}` }],
+    output_format: betaZodOutputFormat(zLeadAnalysisSchema),
   });
 
   const responseText = response.content[0]?.text || '';
 
   try {
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    const jsonMatch = fixJSONObject(responseText);
     if (jsonMatch) {
-      const plan = JSON.parse(jsonMatch[0]);
+      const jsonMatch = responseText.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
+      const jsonText = jsonMatch ? jsonMatch[1] : responseText;
+      const plan = JSON.parse(fixJSONObject(jsonText)); // zLeadAnalysisSchema.parse();
+      console.log('Parsed ', plan);
       if (onThinking) {
         onThinking({
           agent: lead.name,
@@ -81,11 +100,16 @@ Only select specialists whose expertise is genuinely needed.`;
     logger.warn('[executeLeadAnalysis] Could not parse JSON');
   }
 
-  const allIndices = teamAgents.filter((a) => parseInt(a.tier) !== 3).map((_, i) => i + 1);
+  // Fallback: Select at least 2-3 specialists if parsing failed
+  const availableSpecialists = teamAgents.filter((a) => parseInt(a.tier) !== 3);
+  const allIndices = availableSpecialists.map((_, i) => i + 1);
+  // Ensure we have at least 2-3 specialists selected
+  const minSpecialists = Math.min(3, Math.max(2, availableSpecialists.length));
+  const selectedIndices = allIndices.slice(0, minSpecialists);
 
   return {
     analysis: responseText,
-    selectedSpecialists: allIndices,
+    selectedSpecialists: selectedIndices,
     assignments: {},
     deliverableOutline: 'Comprehensive analysis',
   };
@@ -143,7 +167,7 @@ Guidelines:
 
   // Use streaming to get real-time thinking process
   const stream = client.messages.stream({
-    model: agent.model || DEFAULT_ANTHROPIC_MODEL,
+    model: agent.model || ORCHESTRATOR_ANTHROPIC_MODEL,
     max_tokens: 2000,
     system: systemPrompt,
     messages: [
@@ -308,7 +332,7 @@ Do NOT just combine responses. Write as if one expert authored the entire docume
 
   // Use streaming for the synthesis
   const stream = client.messages.stream({
-    model: DEFAULT_ANTHROPIC_MODEL,
+    model: ORCHESTRATOR_ANTHROPIC_MODEL,
     max_tokens: 4000,
     system: systemPrompt,
     messages: [

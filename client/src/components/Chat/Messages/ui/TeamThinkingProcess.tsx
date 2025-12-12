@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useState, useEffect } from 'react';
+import React, { memo, useMemo, useState, useEffect, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Brain, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { teamCollaborationAtom } from '~/store/teamCollaboration';
@@ -8,6 +8,79 @@ import { cn } from '~/utils';
 type TeamThinkingProcessProps = {
   isSubmitting?: boolean;
 };
+
+// Animated thinking entry component
+const AnimatedThinkingEntry = memo(({ agent, thinking }: { agent: string; thinking: string }) => {
+  const [isVisible, setIsVisible] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const prevLengthRef = useRef(0);
+  const timeoutRef = useRef<NodeJS.Timeout>();
+
+  useEffect(() => {
+    // Fade in when first thinking appears
+    if (thinking && thinking.length > 0 && !isVisible) {
+      setIsVisible(true);
+    }
+
+    // Track if content is still streaming (growing)
+    const currentLength = thinking.length;
+    const prevLength = prevLengthRef.current;
+    
+    if (currentLength > prevLength) {
+      setIsStreaming(true);
+      // Clear existing timeout
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      // Hide streaming indicator after 500ms of no updates
+      timeoutRef.current = setTimeout(() => {
+        setIsStreaming(false);
+      }, 500);
+    }
+    
+    prevLengthRef.current = currentLength;
+  }, [thinking, isVisible]);
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <div
+      className={cn(
+        'flex flex-col gap-2 transition-all duration-500 ease-out',
+        isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2',
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 transition-colors duration-200">
+          {agent}
+        </span>
+      </div>
+      <div
+        className={cn(
+          'prose prose-sm dark:prose-invert max-w-none transition-all duration-300 ease-in-out',
+          'ml-4 border-l-2 pl-3 text-gray-700 dark:text-gray-300',
+          isStreaming ? 'border-amber-500/50' : 'border-amber-500/30',
+        )}
+      >
+        <div className="transition-opacity duration-200">
+          <MarkdownLite content={thinking} codeExecution={false} />
+        </div>
+        {isStreaming && (
+          <span className="inline-block w-0.5 h-4 ml-1 bg-amber-500/70 animate-pulse align-middle" />
+        )}
+      </div>
+    </div>
+  );
+});
+
+AnimatedThinkingEntry.displayName = 'AnimatedThinkingEntry';
 
 const TeamThinkingProcess = memo(({ isSubmitting }: TeamThinkingProcessProps) => {
   const collaboration = useRecoilValue(teamCollaborationAtom);
@@ -75,22 +148,11 @@ const TeamThinkingProcess = memo(({ isSubmitting }: TeamThinkingProcessProps) =>
               {thinkingEntries.length > 0 ? (
                 <div className="flex flex-col gap-4">
                   {thinkingEntries.map((entry, idx) => (
-                    <div key={`${entry.agent}-${idx}`} className="flex flex-col gap-2">
-                      <div className="flex items-center gap-2">
-                        <div className="h-2 w-2 rounded-full bg-amber-500" />
-                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-                          {entry.agent}
-                        </span>
-                      </div>
-                      <div
-                        className={cn(
-                          'prose prose-sm dark:prose-invert max-w-none',
-                          'ml-4 border-l-2 border-amber-500/30 pl-3 text-gray-700 dark:text-gray-300',
-                        )}
-                      >
-                        <MarkdownLite content={entry.thinking} codeExecution={false} />
-                      </div>
-                    </div>
+                    <AnimatedThinkingEntry
+                      key={`${entry.agent}-${idx}`}
+                      agent={entry.agent}
+                      thinking={entry.thinking}
+                    />
                   ))}
                 </div>
               ) : (

@@ -1,10 +1,12 @@
+const { fixJSONObject } = require('~/server/utils/jsonRepair');
+const { betaZodOutputFormat } = require('@anthropic-ai/sdk/helpers/beta/zod');
 const Anthropic = require('@anthropic-ai/sdk');
 const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint, anthropicSettings } = require('librechat-data-provider');
 const { getUserKey } = require('~/server/services/UserService');
 const { parseText } = require('@librechat/api');
-const { getCoordinatorAgent, DEFAULT_ANTHROPIC_MODEL } = require('./createCoordinatorAgent');
-const { FILE_ANALYSIS_PROMPT } = require('./prompts');
+const { getCoordinatorAgent, COORDINATOR_ANTHROPIC_MODEL } = require('./createCoordinatorAgent');
+const { FILE_ANALYSIS_PROMPT, zDocumentSchema } = require('./prompts');
 
 /**
  * Analyzes a file using the coordinator agent to identify required professional roles
@@ -63,8 +65,8 @@ ${truncatedText}
 Please analyze this document and return the JSON structure as specified above.`;
 
     // Call Anthropic API
-    const response = await client.messages.create({
-      model: DEFAULT_ANTHROPIC_MODEL,
+    const response = await client.beta.messages.parse({
+      model: COORDINATOR_ANTHROPIC_MODEL,
       max_tokens: 4096,
       temperature: 0.7,
       system: FILE_ANALYSIS_PROMPT,
@@ -74,6 +76,7 @@ Please analyze this document and return the JSON structure as specified above.`;
           content: userMessage,
         },
       ],
+      output_format: betaZodOutputFormat(zDocumentSchema),
     });
 
     // Extract response text
@@ -86,7 +89,7 @@ Please analyze this document and return the JSON structure as specified above.`;
       // Try to extract JSON from markdown code blocks if present
       const jsonMatch = responseText.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
       const jsonText = jsonMatch ? jsonMatch[1] : responseText;
-      analysisResult = JSON.parse(jsonText);
+      analysisResult = JSON.parse(fixJSONObject(jsonText)); // zDocumentSchema.parse();
     } catch (parseError) {
       logger.error('[analyzeFile] Error parsing JSON response:', parseError);
       logger.debug('[analyzeFile] Response text:', responseText);
