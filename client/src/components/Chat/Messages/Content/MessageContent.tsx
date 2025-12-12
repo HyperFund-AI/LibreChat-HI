@@ -150,9 +150,6 @@ const MessageContent = ({
   const { thinkingContent, regularContent } = useMemo(() => parseThinkingContent(text), [text]);
   const showRegularCursor = useMemo(() => isLast && isSubmitting, [isLast, isSubmitting]);
 
-  // Show team thinking when submitting a non-user message
-  // The TeamThinkingProcess component handles showing appropriate state based on available data
-  const showTeamThinking = !isCreatedByUser && isSubmitting;
 
   const unfinishedMessage = useMemo(
     () =>
@@ -185,9 +182,6 @@ const MessageContent = ({
         text={regularContent}
         {...props}
       />
-      {showTeamThinking && (
-        <TeamThinkingProcess isSubmitting={true} />
-      )}
       {unfinishedMessage}
     </>
   );

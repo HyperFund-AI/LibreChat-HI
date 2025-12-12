@@ -169,6 +169,10 @@ const ContentRender = memo(
 
           <div className="flex flex-col gap-1">
             <div className="flex max-w-full flex-grow flex-col gap-0">
+               {/* Team thinking process - show ONLY for Team messages while submitting */}
+               {!msg.isCreatedByUser && isSubmitting && (msg.sender === 'Team' || msg.model === 'team-collaboration') && (
+                <TeamThinkingProcess isSubmitting={true} />
+              )}
               <ContentParts
                 edit={edit}
                 isLast={isLast}
@@ -184,10 +188,6 @@ const ContentRender = memo(
                 conversationId={conversation?.conversationId}
                 content={msg.content as Array<TMessageContentParts | undefined>}
               />
-              {/* Team thinking process - show ONLY for Team messages while submitting */}
-              {!msg.isCreatedByUser && isSubmitting && (msg.sender === 'Team' || msg.model === 'team-collaboration') && (
-                <TeamThinkingProcess isSubmitting={true} />
-              )}
             </div>
 
             {(isSubmittingFamily || isSubmitting) && !(msg.children?.length ?? 0) ? (
