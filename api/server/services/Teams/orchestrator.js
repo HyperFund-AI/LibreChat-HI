@@ -325,6 +325,12 @@ Create a UNIFIED document that:
 5. Uses proper Markdown formatting
 
 Do NOT just combine responses. Write as if one expert authored the entire document.
+
+IMPORTANT OUTPUT FORMAT:
+Your response MUST include:
+1. A brief introductory description (2-4 sentences) explaining what has been prepared and what the document contains. This description should appear BEFORE the artifact.
+2. The document itself wrapped in the artifact tag format below.
+
 The contents of the document should be wrapped around the following tag in order to display it as an artifact:
 
 :::artifact{identifier="unique-document-identifier" type="text/markdown" title="Document Title.md"}
