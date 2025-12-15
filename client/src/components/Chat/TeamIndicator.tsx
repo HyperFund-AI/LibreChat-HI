@@ -548,7 +548,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                   </span>
                 )}
               </button>
-              <div className="ml-auto mr-4 flex items-center">
+              <div className="ml-2 flex items-center">
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -557,7 +557,11 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                   className="hidden"
                 />
                 <button
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => {
+                    setActiveTab('knowledge');
+                    setSelectedAgent(null);
+                    fileInputRef.current?.click();
+                  }}
                   disabled={saveKnowledgeMutation.isLoading}
                   className="flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-600 transition-colors hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 dark:hover:bg-indigo-900/50"
                   title={localize('com_ui_upload_knowledge') || 'Upload .md document'}

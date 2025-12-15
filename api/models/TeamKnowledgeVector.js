@@ -23,6 +23,10 @@ const teamKnowledgeVectorSchema = new mongoose.Schema({
         type: [Number],
         required: true,
     },
+    metadata: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {},
+    },
 }, { timestamps: true });
 
 // Compound index for efficient retrieval during search

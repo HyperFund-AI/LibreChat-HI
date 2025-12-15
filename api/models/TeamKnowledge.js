@@ -213,19 +213,50 @@ const clearKnowledge = async (conversationId) => {
  * @param {string} conversationId - The conversation ID
  * @returns {Promise<string>} Formatted knowledge context
  */
-const getKnowledgeContext = async (conversationId) => {
+const getKnowledgeContext = async (conversationId, query = null) => {
   try {
-    const docs = await getKnowledge(conversationId);
+    let context = '';
 
-    if (docs.length === 0) {
-      return '';
+    if (query) {
+      // 1. Semantic search
+      const chunks = await searchKnowledge(conversationId, query, 10);
+      if (chunks.length > 0) {
+        // 2. Fetch titles for the found chunks
+        const docIds = [...new Set(chunks.map((c) => c.documentId))];
+        const docs = await TeamKnowledge.find({ documentId: { $in: docIds } })
+          .select('documentId title')
+          .lean();
+        const titleMap = docs.reduce((acc, doc) => {
+          acc[doc.documentId] = doc.title;
+          return acc;
+        }, {});
+
+        context = chunks
+          .map((chunk, i) => {
+            const meta = chunk.metadata || {};
+            const lineInfo =
+              meta.loc && meta.loc.lines
+                ? ` (Lines ${meta.loc.lines.from}-${meta.loc.lines.to})`
+                : '';
+            const title = titleMap[chunk.documentId] || 'Unknown Document';
+            return `### Chunk ${i + 1} from "${title}" (ID: ${chunk.documentId})${lineInfo}\n${chunk.text}`;
+          })
+          .join('\n\n---\n\n');
+      }
     }
 
-    const context = docs
-      .map((doc, i) => `### Document ${i + 1}: ${doc.title}\n${doc.content}`)
-      .join('\n\n---\n\n');
+    // TODO old "dump everything" method
+    // if (!context) {
+    //   const docs = await getKnowledge(conversationId);
+    //   if (docs.length === 0) {
+    //     return '';
+    //   }
+    //   context = docs
+    //     .map((doc, i) => `### Document ${i + 1}: ${doc.title}\n${doc.content}`)
+    //     .join('\n\n---\n\n');
+    // }
 
-    return `## Team Knowledge Base\nThe following documents have been previously created and approved by the team:\n\n${context}`;
+    return `## Team Knowledge Base\nThe following documents have been retrieval from the team knowledge base:\n\n${context}`;
   } catch (error) {
     logger.error('[TeamKnowledge] Error formatting knowledge context:', error);
     return '';
@@ -260,6 +291,7 @@ const searchKnowledge = async (conversationId, query, k = 5) => {
       text: v.text,
       documentId: v.documentId,
       score: cosineSimilarity(queryVector, v.vector),
+      metadata: v.metadata,
     }));
 
     // 4. Sort and top K

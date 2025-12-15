@@ -17,6 +17,19 @@ const chunkText = async (text) => {
 };
 
 /**
+ * Split text into chunks with metadata
+ * @param {string} text
+ * @returns {Promise<Object[]>}
+ */
+const chunkTextWithMetadata = async (text) => {
+  const splitter = new RecursiveCharacterTextSplitter({
+    chunkSize: 1000,
+    chunkOverlap: 200,
+  });
+  return await splitter.createDocuments([text]);
+};
+
+/**
  * Calculate cosine similarity between two vectors
  * @param {number[]} vecA
  * @param {number[]} vecB
@@ -49,22 +62,24 @@ const upsertDocumentEmbeddings = async (document) => {
     const { documentId, conversationId, content } = document;
     if (!content) return;
 
-    // 1. Chunk the content
-    const chunks = await chunkText(content);
+    // 1. Chunk the content with metadata
+    const docs = await chunkTextWithMetadata(content);
 
     // 2. Generate embeddings for all chunks
     // Note: getOpenRouterEmbedding generates for a single string.
     // We should probably parallelize this or use a batch API if available,
     // but the current helper is single-input. Let's map it.
     const vectorsData = await Promise.all(
-      chunks.map(async (chunk, index) => {
-        const vector = await getOpenRouterEmbedding(chunk);
+      docs.map(async (doc, index) => {
+        const text = doc.pageContent;
+        const vector = await getOpenRouterEmbedding(text);
         return {
           documentId,
           conversationId,
           chunkIndex: index,
-          text: chunk,
+          text,
           vector,
+          metadata: doc.metadata || {},
         };
       }),
     );
@@ -86,6 +101,7 @@ const upsertDocumentEmbeddings = async (document) => {
 
 module.exports = {
   chunkText,
+  chunkTextWithMetadata,
   cosineSimilarity,
   upsertDocumentEmbeddings,
 };
