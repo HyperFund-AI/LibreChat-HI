@@ -1,7 +1,8 @@
-import { useEffect, useRef, useCallback, memo } from 'react';
+import { useEffect, useRef, useCallback, memo, useMemo } from 'react';
 import debounce from 'lodash/debounce';
 import { useLocation, useParams } from 'react-router-dom';
-import { dataService } from 'librechat-data-provider';
+import { useQuery } from '@tanstack/react-query';
+import { dataService, type KnowledgeDocument } from 'librechat-data-provider';
 import { useRecoilState, useSetRecoilState, useResetRecoilState } from 'recoil';
 import type { Artifact } from '~/common';
 import { normalizeKeyPart } from '~/common';
@@ -101,17 +102,69 @@ function ArtifactDocumentIndicator({ artifact, className }: ArtifactDocumentIndi
     setCurrentArtifactId,
   ]);
 
+  type KnowledgeDocumentWithDedupe = KnowledgeDocument & { dedupeKey?: string };
+  const { data: knowledgeData } = useQuery(
+    ['teamKnowledge', conversationId],
+    () => {
+      if (!conversationId) {
+        throw new Error('No conversation ID');
+      }
+      return dataService.getTeamKnowledge(conversationId);
+    },
+    {
+      enabled: !!conversationId,
+      refetchOnWindowFocus: false,
+    },
+  );
+
+  const kbDocuments = useMemo<KnowledgeDocumentWithDedupe[]>(
+    () => (knowledgeData?.documents as KnowledgeDocumentWithDedupe[]) ?? [],
+    [knowledgeData],
+  );
+
+  const normalizedTitle = useMemo(
+    () => normalizeKeyPart(artifact?.title ?? 'Artifact'),
+    [artifact?.title],
+  );
+
+  const kbDedupeKey = useMemo(() => {
+    if (!artifact) {
+      return '';
+    }
+    const identifier = String(artifact.identifier ?? '');
+    const stableIdPart =
+      identifier && identifier !== 'lc-no-identifier'
+        ? identifier
+        : String(artifact.messageId ?? '');
+    return `artifact:${stableIdPart}:${normalizedTitle}`;
+  }, [artifact, normalizedTitle]);
+
+  const existingKbDoc = useMemo(() => {
+    // Prefer direct dedupeKey match (new server field)
+    const byDedupeKey = kbDocuments.find((d) => d?.dedupeKey === kbDedupeKey);
+    if (byDedupeKey) {
+      return byDedupeKey;
+    }
+
+    // Fallback for older docs: match by (messageId + normalized title)
+    const msgId = String(artifact?.messageId ?? '');
+    if (!msgId) {
+      return undefined;
+    }
+    return kbDocuments.find(
+      (d: any) =>
+        String(d?.messageId ?? '') === msgId &&
+        normalizeKeyPart(String(d?.title ?? '')) === normalizedTitle,
+    );
+  }, [kbDocuments, kbDedupeKey, artifact?.messageId, normalizedTitle]);
+
+  const currentKbContent = artifact?.content ?? '';
+  const isKbSaved =
+    Boolean(existingKbDoc) && String(existingKbDoc?.content ?? '') === currentKbContent;
+
   if (artifact == null || artifact.id == null || artifact.id === '') {
     return null;
   }
-
-  // TODO common logic for pane and bar
-  const normalizedTitle = normalizeKeyPart(artifact.title ?? 'Artifact');
-  const identifier = normalizeKeyPart(String(artifact.identifier ?? ''));
-  const source = identifier
-    ? `id:${identifier}`
-    : `msg:${String(messageId ?? artifact.messageId ?? '')}`;
-  const dedupeKey = `artifact:${source}:${normalizedTitle}`;
 
   return (
     <DocumentActionBar
@@ -127,13 +180,14 @@ function ArtifactDocumentIndicator({ artifact, className }: ArtifactDocumentIndi
       saveToKnowledge={
         conversationId
           ? {
-              conversationId,
-              messageId: artifact.messageId,
-              title: artifact.title ?? 'Artifact',
-              tags: ['artifact'],
-              invalidateQueryKey: ['teamKnowledge', conversationId],
-              dedupeKey,
-            }
+            conversationId,
+            messageId: artifact.messageId,
+            title: artifact.title ?? 'Artifact',
+            tags: ['artifact'],
+            invalidateQueryKey: ['teamKnowledge', conversationId],
+            dedupeKey: kbDedupeKey,
+            isSaved: isKbSaved,
+          }
           : undefined
       }
     />

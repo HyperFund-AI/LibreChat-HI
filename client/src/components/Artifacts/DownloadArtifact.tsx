@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Download, CircleCheckBig } from 'lucide-react';
 import type { Artifact } from '~/common';
-import { Button } from '@librechat/client';
+import { Button, TooltipAnchor } from '@librechat/client';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
 import { useCodeState } from '~/Providers/EditorContext';
 import { useLocalize } from '~/hooks';
@@ -35,14 +35,21 @@ const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
   };
 
   return (
-    <Button
-      size="icon"
-      variant="ghost"
-      onClick={handleDownload}
-      aria-label={localize('com_ui_download_artifact')}
-    >
-      {isDownloaded ? <CircleCheckBig size={16} /> : <Download size={16} />}
-    </Button>
+    <TooltipAnchor
+      description={localize('com_ui_download_artifact')}
+      side="bottom"
+      delay={50}
+      render={
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={handleDownload}
+          aria-label={localize('com_ui_download_artifact')}
+        >
+          {isDownloaded ? <CircleCheckBig size={16} /> : <Download size={16} />}
+        </Button>
+      }
+    />
   );
 };
 

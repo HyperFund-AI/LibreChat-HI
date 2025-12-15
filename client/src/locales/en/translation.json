@@ -1185,6 +1185,7 @@
   "com_ui_save_key_success": "API key saved successfully",
   "com_ui_save_submit": "Save & Submit",
   "com_ui_saved": "Saved!",
+  "com_ui_saved_in_kb": "Saved in KB",
   "com_ui_save_to_knowledge": "Save to KB",
   "com_ui_saving": "Saving...",
   "com_ui_schema": "Schema",

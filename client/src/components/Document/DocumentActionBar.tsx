@@ -37,6 +37,11 @@ export type SaveToKnowledgeConfig = {
   /** Optional query key to invalidate after save. Defaults to ['teamKnowledge', conversationId]. */
   invalidateQueryKey?: unknown[];
   /**
+   * Explicitly set saved state (e.g. from parent checking the KB).
+   * If provided, overrides internal state until a new save occurs.
+   */
+  isSaved?: boolean;
+  /**
    * Override save behavior entirely (e.g., artifacts could save elsewhere).
    * If not provided, defaults to dataService.saveToTeamKnowledge.
    */
@@ -151,8 +156,14 @@ function DocumentActionBar({
   const { conversationId: conversationIdFromRoute } = useParams<{ conversationId: string }>();
 
   const [isCopied, setIsCopied] = useState(false);
-  const [isSaved, setIsSaved] = useState(false);
+  const [isSaved, setIsSaved] = useState(saveToKnowledge?.isSaved ?? false);
   const [isToggleHovered, setIsToggleHovered] = useState(false);
+
+  useEffect(() => {
+    if (saveToKnowledge?.isSaved !== undefined) {
+      setIsSaved(saveToKnowledge.isSaved);
+    }
+  }, [saveToKnowledge?.isSaved]);
 
   const setToggleHoveredOn = useCallback(() => setIsToggleHovered(true), []);
   const setToggleHoveredOff = useCallback(() => setIsToggleHovered(false), []);
@@ -339,14 +350,14 @@ function DocumentActionBar({
       className={cn(
         'relative mt-3 flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary p-2',
         primaryToggle?.onToggle &&
-          primaryToggle.isOpen &&
-          cn(
-            'border-border-medium',
-            'shadow-sm',
-            'ring-border-medium/40 ring-1 ring-inset',
-            'before:pointer-events-none before:absolute before:inset-0 before:rounded-lg',
-            "before:bg-surface-hover before:opacity-50 before:content-['']",
-          ),
+        primaryToggle.isOpen &&
+        cn(
+          'border-border-medium',
+          'shadow-sm',
+          'ring-border-medium/40 ring-1 ring-inset',
+          'before:pointer-events-none before:absolute before:inset-0 before:rounded-lg',
+          "before:bg-surface-hover before:opacity-50 before:content-['']",
+        ),
         className,
       )}
     >
@@ -473,7 +484,7 @@ function DocumentActionBar({
             )}
             <StableLabel
               primary={localize('com_ui_save_to_knowledge')}
-              secondary={localize('com_ui_saved')}
+              secondary={localize('com_ui_saved_in_kb')}
               showSecondary={isSaved}
             />
           </Button>

@@ -5,7 +5,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { dataService, type KnowledgeDocument } from 'librechat-data-provider';
 import { BookmarkPlus, CheckCircle, Code, Loader2, Play, RefreshCw, X } from 'lucide-react';
 import { useSetRecoilState, useResetRecoilState } from 'recoil';
-import { Button, Spinner, useMediaQuery, Radio, useToastContext } from '@librechat/client';
+import {
+  Button,
+  Spinner,
+  useMediaQuery,
+  Radio,
+  useToastContext,
+  TooltipAnchor,
+} from '@librechat/client';
 import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-react';
 import { useShareContext, useMutationState } from '~/Providers';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
@@ -357,19 +364,26 @@ export default function Artifacts() {
               )}
             >
               {activeTab === 'preview' && (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={handleRefresh}
-                  disabled={isRefreshing}
-                  aria-label={localize('com_ui_refresh')}
-                >
-                  {isRefreshing ? (
-                    <Spinner size={16} />
-                  ) : (
-                    <RefreshCw size={16} className="transition-transform duration-200" />
-                  )}
-                </Button>
+                <TooltipAnchor
+                  description={localize('com_ui_refresh')}
+                  side="bottom"
+                  delay={50}
+                  render={
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={handleRefresh}
+                      disabled={isRefreshing}
+                      aria-label={localize('com_ui_refresh')}
+                    >
+                      {isRefreshing ? (
+                        <Spinner size={16} />
+                      ) : (
+                        <RefreshCw size={16} className="transition-transform duration-200" />
+                      )}
+                    </Button>
+                  }
+                />
               )}
               {activeTab !== 'preview' && isMutating && (
                 <RefreshCw size={16} className="animate-spin text-text-secondary" />
@@ -388,47 +402,67 @@ export default function Artifacts() {
               )}
               <CopyCodeButton content={currentArtifact.content ?? ''} />
               <DownloadArtifact artifact={currentArtifact} />
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => {
-                  if (!conversationId) {
-                    showToast({
-                      message: 'Cannot save: conversation not found',
-                      status: 'error',
-                    });
-                    return;
-                  }
-                  // Prevent duplicate saves:
-                  // - avoid re-saving when KB already matches current content
-                  // - avoid double triggers while mutation is in-flight
-                  if (saveToKnowledgeMutation.isLoading || isKbSaved) {
-                    return;
-                  }
-                  saveToKnowledgeMutation.mutate();
-                }}
-                disabled={!conversationId || saveToKnowledgeMutation.isLoading || isKbSaved}
-                aria-label={
-                  isKbSaved ? localize('com_ui_saved') : localize('com_ui_save_to_knowledge')
+              <TooltipAnchor
+                description={
+                  isKbSaved ? localize('com_ui_saved_in_kb') : localize('com_ui_save_to_knowledge')
                 }
-                title={isKbSaved ? localize('com_ui_saved') : localize('com_ui_save_to_knowledge')}
-              >
-                {saveToKnowledgeMutation.isLoading ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : isKbSaved ? (
-                  <CheckCircle size={16} className="text-green-500" />
-                ) : (
-                  <BookmarkPlus size={16} className={isKbModified ? 'text-amber-500' : undefined} />
-                )}
-              </Button>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={closeArtifacts}
-                aria-label={localize('com_ui_close')}
-              >
-                <X size={16} />
-              </Button>
+                side="bottom"
+                delay={50}
+                render={
+                  <div className="inline-flex cursor-default">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => {
+                        if (!conversationId) {
+                          showToast({
+                            message: 'Cannot save: conversation not found',
+                            status: 'error',
+                          });
+                          return;
+                        }
+                        // Prevent duplicate saves:
+                        // - avoid re-saving when KB already matches current content
+                        // - avoid double triggers while mutation is in-flight
+                        if (saveToKnowledgeMutation.isLoading || isKbSaved) {
+                          return;
+                        }
+                        saveToKnowledgeMutation.mutate();
+                      }}
+                      disabled={!conversationId || saveToKnowledgeMutation.isLoading || isKbSaved}
+                      aria-label={
+                        isKbSaved ? localize('com_ui_saved') : localize('com_ui_save_to_knowledge')
+                      }
+                    >
+                      {saveToKnowledgeMutation.isLoading ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : isKbSaved ? (
+                        <CheckCircle size={16} className="text-green-500" />
+                      ) : (
+                        <BookmarkPlus
+                          size={16}
+                          className={isKbModified ? 'text-amber-500' : undefined}
+                        />
+                      )}
+                    </Button>
+                  </div>
+                }
+              />
+              <TooltipAnchor
+                description={localize('com_ui_close')}
+                side="bottom"
+                delay={50}
+                render={
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={closeArtifacts}
+                    aria-label={localize('com_ui_close')}
+                  >
+                    <X size={16} />
+                  </Button>
+                }
+              />
             </div>
           </div>
 

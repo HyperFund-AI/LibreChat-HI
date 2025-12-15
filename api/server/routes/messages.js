@@ -9,14 +9,9 @@ const {
   getMessages,
   updateMessage,
   deleteMessages,
-  updateMessage,
-  deleteMessages,
   saveToKnowledge,
 } = require('~/models');
-const {
-  findAllArtifacts,
-  replaceArtifactContent,
-} = require('~/server/services/Artifacts/update');
+const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
 const {
   extractArtifactsWithMetadata,
   getArtifactDedupeKey,
@@ -212,7 +207,7 @@ router.post('/artifact/:messageId', async (req, res) => {
         const dedupeKey = getArtifactDedupeKey({
           conversationId: savedMessage.conversationId,
           title: metadata.title,
-          identifier: metadata.identifier
+          identifier: metadata.identifier,
         });
 
         await saveToKnowledge({
@@ -225,12 +220,14 @@ router.post('/artifact/:messageId', async (req, res) => {
           tags: metadata.type ? [metadata.type] : [],
           metadata: {
             savedAt: new Date().toISOString(),
-            ...metadata
+            ...metadata,
           },
           onlyUpdate: true,
         });
 
-        logger.info(`[Artifact Update] Updated knowledge base for artifact: ${metadata.title || dedupeKey}`);
+        logger.info(
+          `[Artifact Update] Updated knowledge base for artifact: ${metadata.title || dedupeKey}`,
+        );
       }
     } catch (err) {
       // Don't fail the response if KB update fails, just log it
