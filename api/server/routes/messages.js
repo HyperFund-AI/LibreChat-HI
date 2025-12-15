@@ -9,9 +9,16 @@ const {
   getMessages,
   updateMessage,
   deleteMessages,
+  saveToKnowledge,
 } = require('~/models');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
+const {
+  extractArtifactsWithMetadata,
+  getArtifactDedupeKey,
+  parseArtifactMetadata,
+} = require('~/server/utils/artifactUtils');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
+const { shouldUseTeamChat } = require('~/server/controllers/teams/chat');
 const { cleanUpPrimaryKeyValue } = require('~/lib/utils/misc');
 const { getConvosQueried } = require('~/models/Conversation');
 const { Message } = require('~/db/models');
@@ -186,6 +193,46 @@ router.post('/artifact/:messageId', async (req, res) => {
       content: savedMessage.content,
       text: savedMessage.text,
     });
+
+    // Update Knowledge Base if this is a team conversation
+    try {
+      const isTeamChat = await shouldUseTeamChat(savedMessage.conversationId);
+
+      if (isTeamChat) {
+        // Parse metadata from the original artifact text since only inner content is updated
+        const openTagEnd = targetArtifact.text.indexOf('}');
+        const openTag = targetArtifact.text.substring(0, openTagEnd + 1);
+        const metadata = parseArtifactMetadata(openTag);
+
+        const dedupeKey = getArtifactDedupeKey({
+          conversationId: savedMessage.conversationId,
+          title: metadata.title,
+          identifier: metadata.identifier,
+        });
+
+        await saveToKnowledge({
+          conversationId: savedMessage.conversationId,
+          dedupeKey,
+          title: metadata.title || 'Untitled Artifact',
+          content: unescapedUpdated, // The new content
+          messageId: savedMessage.messageId,
+          createdBy: req.user.id,
+          tags: metadata.type ? [metadata.type] : [],
+          metadata: {
+            savedAt: new Date().toISOString(),
+            ...metadata,
+          },
+          onlyUpdate: true,
+        });
+
+        logger.info(
+          `[Artifact Update] Updated knowledge base for artifact: ${metadata.title || dedupeKey}`,
+        );
+      }
+    } catch (err) {
+      // Don't fail the response if KB update fails, just log it
+      logger.error('[Artifact Update] Error updating knowledge base:', err);
+    }
   } catch (error) {
     logger.error('Error editing artifact:', error);
     res.status(500).json({ error: 'Internal server error' });

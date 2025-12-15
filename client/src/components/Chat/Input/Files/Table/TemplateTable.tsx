@@ -1,19 +1,21 @@
 import { DotsIcon, TrashIcon } from '@librechat/client';
+import { useLocalize } from '~/hooks';
 
 export default function Template() {
+  const localize = useLocalize();
   return (
     <div className="max-h-[28rem] overflow-y-auto rounded-md border border-black/10 dark:border-white/10">
       <table className="w-full border-separate border-spacing-0">
         <thead>
           <tr>
             <th className="sticky top-0 rounded-t border-b border-black/10 bg-white px-4 py-2 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-900 dark:text-gray-100">
-              Name
+              {localize('com_ui_name')}
             </th>
             <th className="sticky top-0 rounded-t border-b border-black/10 bg-white px-4 py-2 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-900 dark:text-gray-100">
-              Date
+              {localize('com_ui_date')}
             </th>
             <th className="sticky top-0 rounded-t border-b border-black/10 bg-white px-4 py-2 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-900 dark:text-gray-100">
-              Size
+              {localize('com_ui_size')}
             </th>
             <th className="sticky top-0 rounded-t border-b border-black/10 bg-white px-4 py-2 text-right font-medium text-gray-700 dark:border-white/10 dark:bg-gray-900 dark:text-gray-100">
               <button
@@ -33,13 +35,15 @@ export default function Template() {
           <tr className="">
             <td className="border-b border-black/10 text-left text-gray-600 dark:border-white/10 dark:text-gray-300 [tr:last-child_&]:border-b-0">
               <div className="px-4 py-2 [tr[data-disabled=true]_&]:opacity-50">
-                File Transfer: Node to FastAPI
+                {localize('com_ui_file_transfer_node_to_fastapi')}
               </div>
             </td>
             <td className="border-b border-black/10 text-left text-gray-600 dark:border-white/10 dark:text-gray-300 [tr:last-child_&]:border-b-0">
+              {/* eslint-disable-next-line i18next/no-literal-string */}
               <div className="px-4 py-2 [tr[data-disabled=true]_&]:opacity-50">June 11, 2023</div>
             </td>
             <td className="border-b border-black/10 text-left text-gray-600 dark:border-white/10 dark:text-gray-300 [tr:last-child_&]:border-b-0">
+              {/* eslint-disable-next-line i18next/no-literal-string */}
               <div className="px-4 py-2 [tr[data-disabled=true]_&]:opacity-50">11 mb</div>
             </td>
             <td className="border-b border-black/10 text-left text-gray-600 dark:border-white/10 dark:text-gray-300 [tr:last-child_&]:border-b-0">

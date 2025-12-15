@@ -1,12 +1,9 @@
-import React, { useState, useCallback } from 'react';
-import copy from 'copy-to-clipboard';
+import { useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { Copy, Download, BookmarkPlus, CheckCircle, FileText, Loader2 } from 'lucide-react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { dataService } from 'librechat-data-provider';
-import { Button, useToastContext } from '@librechat/client';
+import { useQuery } from '@tanstack/react-query';
+import { dataService, type KnowledgeDocument } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import DocumentActionBar, { extractDocumentTitle } from '~/components/Document/DocumentActionBar';
 
 interface TeamDocumentActionsProps {
   content: string;
@@ -16,26 +13,7 @@ interface TeamDocumentActionsProps {
 }
 
 /**
- * Extracts a title from markdown content
- */
-const extractTitle = (content: string): string => {
-  // Try to find first heading
-  const h1Match = content.match(/^#\s+(.+)$/m);
-  if (h1Match) return h1Match[1].trim();
-
-  const h2Match = content.match(/^##\s+(.+)$/m);
-  if (h2Match) return h2Match[1].trim();
-
-  // Try to find first bold text
-  const boldMatch = content.match(/\*\*([^*]+)\*\*/);
-  if (boldMatch) return boldMatch[1].trim();
-
-  // Default
-  return `Team Document - ${new Date().toLocaleDateString()}`;
-};
-
-/**
- * Actions toolbar for team documents with copy, download, and save to knowledge buttons
+ * Team document action bar (copy, download, save-to-knowledge), built on the shared DocumentActionBar UI.
  */
 export default function TeamDocumentActions({
   content,
@@ -44,87 +22,42 @@ export default function TeamDocumentActions({
   className,
 }: TeamDocumentActionsProps) {
   const localize = useLocalize();
-  const { showToast } = useToastContext();
-  const queryClient = useQueryClient();
   const { conversationId } = useParams<{ conversationId: string }>();
 
-  const [isCopied, setIsCopied] = useState(false);
-  const [isSaved, setIsSaved] = useState(false);
-
-  // Mutation for saving to knowledge base
-  const saveToKnowledgeMutation = useMutation({
-    mutationFn: async () => {
-      if (!conversationId) throw new Error('No conversation ID');
-
-      const title = extractTitle(content);
-      return dataService.saveToTeamKnowledge(conversationId, {
-        title,
-        content,
-        messageId,
-        tags: ['team-output'],
-      });
+  type KnowledgeDocumentWithDedupe = KnowledgeDocument & { dedupeKey?: string };
+  const { data: knowledgeData } = useQuery(
+    ['teamKnowledge', conversationId],
+    () => {
+      if (!conversationId) {
+        throw new Error('No conversation ID');
+      }
+      return dataService.getTeamKnowledge(conversationId);
     },
-    onSuccess: () => {
-      setIsSaved(true);
-      showToast({
-        message: 'Document saved to team knowledge base',
-        status: 'success',
-      });
-      // Invalidate knowledge cache
-      queryClient.invalidateQueries({ queryKey: ['teamKnowledge', conversationId] });
-      setTimeout(() => setIsSaved(false), 3000);
+    {
+      enabled: !!conversationId,
+      refetchOnWindowFocus: false,
     },
-    onError: (error: Error) => {
-      showToast({
-        message: `Failed to save: ${error.message}`,
-        status: 'error',
-      });
-    },
-  });
+  );
 
-  // Copy to clipboard
-  const handleCopy = useCallback(() => {
-    copy(content, { format: 'text/plain' });
-    setIsCopied(true);
-    showToast({
-      message: 'Copied to clipboard',
-      status: 'success',
-    });
-    setTimeout(() => setIsCopied(false), 3000);
-  }, [content, showToast]);
+  const kbDocuments = useMemo<KnowledgeDocumentWithDedupe[]>(
+    () => (knowledgeData?.documents as KnowledgeDocumentWithDedupe[]) ?? [],
+    [knowledgeData],
+  );
 
-  // Download as markdown file
-  const handleDownload = useCallback(() => {
-    const title = extractTitle(content);
-    const filename = `${title.replace(/[^a-z0-9]/gi, '_').substring(0, 50)}.md`;
+  const title = useMemo(() => extractDocumentTitle(content), [content]);
 
-    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  // Construct dedupe key for team docs (matches format in onSave below)
+  const kbDedupeKey = `teamdoc:${messageId ?? ''}:${title}`;
 
-    showToast({
-      message: `Downloaded ${filename}`,
-      status: 'success',
-    });
-  }, [content, showToast]);
+  const existingKbDoc = useMemo(() => {
+    const found = kbDocuments.find((d) => d.dedupeKey === kbDedupeKey);
+    return found;
+  }, [kbDocuments, kbDedupeKey]);
 
-  // Save to knowledge base
-  const handleSaveToKnowledge = useCallback(() => {
-    if (!conversationId) {
-      showToast({
-        message: 'Cannot save: conversation not found',
-        status: 'error',
-      });
-      return;
-    }
-    saveToKnowledgeMutation.mutate();
-  }, [conversationId, saveToKnowledgeMutation, showToast]);
+  const isKbSaved = useMemo(() => {
+    // Also matched if content is identical (optional strictness)
+    return Boolean(existingKbDoc && existingKbDoc.content === content);
+  }, [existingKbDoc, content]);
 
   // Only show for team responses with sufficient content
   if (!isTeamResponse || content.length < 100) {
@@ -132,71 +65,25 @@ export default function TeamDocumentActions({
   }
 
   return (
-    <div
-      className={cn(
-        'mt-3 flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary p-2',
-        className,
-      )}
-    >
-      <FileText className="h-4 w-4 text-text-secondary" />
-      <span className="text-xs font-medium text-text-secondary">
-        {localize('com_ui_team_document')}
-      </span>
-
-      <div className="ml-auto flex items-center gap-1">
-        {/* Copy Button */}
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={handleCopy}
-          className="h-8 gap-1.5 px-2 text-xs"
-          title="Copy as Markdown"
-        >
-          {isCopied ? (
-            <CheckCircle className="h-4 w-4 text-green-500" />
-          ) : (
-            <Copy className="h-4 w-4" />
-          )}
-          <span className="hidden sm:inline">
-            {isCopied ? localize('com_ui_copied') : localize('com_ui_copy_to_clipboard')}
-          </span>
-        </Button>
-
-        {/* Download Button */}
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={handleDownload}
-          className="h-8 gap-1.5 px-2 text-xs"
-          title="Download as Markdown file"
-        >
-          <Download className="h-4 w-4" />
-          <span className="hidden sm:inline">{localize('com_ui_download')}</span>
-        </Button>
-
-        {/* Save to Knowledge Button */}
-        {conversationId && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={handleSaveToKnowledge}
-            disabled={saveToKnowledgeMutation.isPending || isSaved}
-            className={cn('h-8 gap-1.5 px-2 text-xs', isSaved && 'text-green-500')}
-            title="Save to team knowledge base"
-          >
-            {saveToKnowledgeMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : isSaved ? (
-              <CheckCircle className="h-4 w-4" />
-            ) : (
-              <BookmarkPlus className="h-4 w-4" />
-            )}
-            <span className="hidden sm:inline">
-              {isSaved ? localize('com_ui_saved') : localize('com_ui_save_to_knowledge')}
-            </span>
-          </Button>
-        )}
-      </div>
-    </div>
+    <DocumentActionBar
+      className={className}
+      content={content}
+      messageId={messageId}
+      label={localize('com_ui_team_document')}
+      minContentLength={100}
+      saveToKnowledge={{
+        messageId,
+        tags: ['team-output'],
+        isSaved: isKbSaved,
+        onSave: ({ conversationId, title, content, messageId, tags }) =>
+          dataService.saveToTeamKnowledge(conversationId, {
+            title,
+            content,
+            messageId,
+            tags,
+            dedupeKey: kbDedupeKey,
+          }),
+      }}
+    />
   );
 }

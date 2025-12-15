@@ -11,13 +11,14 @@ interface TooltipAnchorProps extends Ariakit.TooltipAnchorProps {
   description: string;
   enableHTML?: boolean;
   side?: 'top' | 'bottom' | 'left' | 'right';
+  delay?: number;
 }
 
 export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(function TooltipAnchor(
-  { description, side = 'top', className, role, enableHTML = false, ...props },
+  { description, side = 'top', className, role, enableHTML = false, delay, ...props },
   ref,
 ) {
-  const tooltip = Ariakit.useTooltipStore({ placement: side });
+  const tooltip = Ariakit.useTooltipStore({ placement: side, showTimeout: delay });
   const mounted = Ariakit.useStoreState(tooltip, (state) => state.mounted);
   const placement = Ariakit.useStoreState(tooltip, (state) => state.placement);
 

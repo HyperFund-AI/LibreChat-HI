@@ -86,14 +86,14 @@ export default function useArtifacts() {
     setCurrentArtifactId(latestArtifactId);
     lastContentRef.current = latestArtifact?.content ?? null;
 
-    // Only switch to code tab if we haven't detected an enclosed artifact yet
-    if (!hasEnclosedArtifactRef.current && !hasAutoSwitchedToCodeRef.current) {
-      const artifactStartContent = latestArtifact?.content?.slice(0, 50) ?? '';
-      if (artifactStartContent.length > 0 && latestMessageText.includes(artifactStartContent)) {
-        setActiveTab('code');
-        hasAutoSwitchedToCodeRef.current = true;
-      }
-    }
+    // Code tab auto-switch disabled - showing Preview only
+    // if (!hasEnclosedArtifactRef.current && !hasAutoSwitchedToCodeRef.current) {
+    //   const artifactStartContent = latestArtifact?.content?.slice(0, 50) ?? '';
+    //   if (artifactStartContent.length > 0 && latestMessageText.includes(artifactStartContent)) {
+    //     setActiveTab('code');
+    //     hasAutoSwitchedToCodeRef.current = true;
+    //   }
+    // }
   }, [
     artifacts,
     isSubmitting,

@@ -10,4 +10,5 @@ module.exports = {
   sendEmail,
   ...files,
   ...queue,
+  ...require('./embeddings'),
 };

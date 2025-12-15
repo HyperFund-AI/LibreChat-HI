@@ -22,6 +22,13 @@ const {
 } = require('./Message');
 const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
+const {
+  saveToKnowledge,
+  getKnowledge,
+  getKnowledgeDocument,
+  deleteKnowledgeDocument,
+  clearKnowledge,
+} = require('./TeamKnowledge');
 const { File } = require('~/db/models');
 
 const seedDatabase = async () => {
@@ -59,6 +66,12 @@ module.exports = {
   getPresets,
   savePreset,
   deletePresets,
+
+  saveToKnowledge,
+  getKnowledge,
+  getKnowledgeDocument,
+  deleteKnowledgeDocument,
+  clearKnowledge,
 
   Files: File,
 };

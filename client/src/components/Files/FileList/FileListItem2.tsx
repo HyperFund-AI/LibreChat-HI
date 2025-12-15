@@ -15,6 +15,7 @@ export default function FileListItem2({
   deleteFile,
   attachedVectorStores,
 }: FileListItemProps) {
+  const localize = useLocalize();
   const navigate = useNavigate();
 
   return (
@@ -41,7 +42,7 @@ export default function FileListItem2({
                 >
                   <PlusIcon className="h-3 w-3" />
                   &nbsp;
-                  {attachedVectorStores.length - index} more
+                  {localize('com_ui_more_count', { 0: attachedVectorStores.length - index })}
                 </span>
               );
             }

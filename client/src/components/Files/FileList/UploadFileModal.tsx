@@ -23,7 +23,7 @@ const UploadFileModal = ({ open, onOpenChange }) => {
       >
         <DialogHeader>
           <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
-            Upoad a File
+            {localize('com_ui_upload_a_file')}
           </DialogTitle>
         </DialogHeader>
         <div className="flex w-full flex-col p-0 sm:p-6 sm:pb-0 sm:pt-4">
@@ -32,32 +32,39 @@ const UploadFileModal = ({ open, onOpenChange }) => {
               <img />
             </div>
             <div className="flex w-full flex-col text-center sm:w-4/5 sm:text-left">
-              <div className="italic">Please upload square file, size less than 100KB</div>
+              <div className="italic">{localize('com_ui_upload_square_file_less_than_100kb')}</div>
               <div className="mt-4 flex w-full flex-row items-center bg-[#f9f9f9] p-2">
                 <div className="w-1/2 sm:w-1/3">
-                  <Button>Choose File</Button>
+                  <Button>{localize('com_ui_choose_file')}</Button>
                 </div>
-                <div className="w-1/2 sm:w-1/3"> No File Chosen</div>
+                <div className="w-1/2 sm:w-1/3"> {localize('com_ui_no_file_chosen')}</div>
               </div>
             </div>
           </div>
           <div className="mt-3 flex w-full flex-col">
-            <label htmlFor="name">Name</label>
-            <label className="hidden text-[#808080] sm:block">The name of the uploaded file</label>
-            <Input type="text" id="name" name="name" placeholder="Name" />
+            <label htmlFor="name">{localize('com_ui_name')}</label>
+            <label className="hidden text-[#808080] sm:block">
+              {localize('com_ui_name_of_uploaded_file')}
+            </label>
+            <Input type="text" id="name" name="name" placeholder={localize('com_ui_name')} />
           </div>
 
           <div className="mt-3 flex w-full flex-col">
-            <label htmlFor="purpose">Purpose</label>
+            <label htmlFor="purpose">{localize('com_ui_purpose')}</label>
             <label className="hidden text-[#808080] sm:block">
-              The purpose of the uploaded file
+              {localize('com_ui_purpose_of_uploaded_file')}
             </label>
-            <Input type="text" id="purpose" name="purpose" placeholder="Purpose" />
+            <Input
+              type="text"
+              id="purpose"
+              name="purpose"
+              placeholder={localize('com_ui_purpose')}
+            />
           </div>
 
           <div className="mt-3 flex w-full flex-row justify-between">
             <div className="hidden w-1/3 sm:block">
-              <span className="font-bold">Learn about file purpose</span>
+              <span className="font-bold">{localize('com_ui_learn_about_file_purpose')}</span>
             </div>
             <div className="flex w-full flex-row justify-evenly sm:w-1/3">
               <Button
@@ -66,7 +73,7 @@ const UploadFileModal = ({ open, onOpenChange }) => {
                   onOpenChange(false);
                 }}
               >
-                Cancel
+                {localize('com_ui_cancel')}
               </Button>
               <Button
                 className="w-full rounded-md border border-black bg-black p-0 text-white"
@@ -74,7 +81,7 @@ const UploadFileModal = ({ open, onOpenChange }) => {
                   console.log('upload file');
                 }}
               >
-                Upload
+                {localize('com_ui_upload')}
               </Button>
             </div>
           </div>

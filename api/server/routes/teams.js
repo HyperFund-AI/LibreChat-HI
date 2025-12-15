@@ -220,9 +220,32 @@ router.post('/:conversationId/knowledge', async (req, res) => {
       });
     }
 
-    // Generate unique document ID
-    const { v4: uuidv4 } = require('uuid');
-    const documentId = `kb_${conversationId}_${uuidv4()}`;
+    /**
+     * Deduplication strategy:
+     * - Prefer a client-provided `dedupeKey` (stable across turns if desired).
+     * - Otherwise dedupe by (conversationId + messageId + normalizedTitle).
+     *
+     * We derive a deterministic documentId from that key so repeated saves update the same document
+     * rather than creating duplicates.
+     */
+    const crypto = require('crypto');
+
+    const normalizedTitle =
+      String(title)
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, '_')
+        .replace(/[^a-z0-9_-]/g, '')
+        .slice(0, 64) || 'document';
+
+    const { getArtifactDedupeKey } = require('~/server/utils/artifactUtils');
+
+    const baseDedupeKey = req.body?.dedupeKey
+      ? String(req.body.dedupeKey)
+      : getArtifactDedupeKey({ conversationId, title });
+
+    const dedupeHash = crypto.createHash('sha256').update(baseDedupeKey).digest('hex').slice(0, 16);
+    const documentId = `kb_${conversationId}_${dedupeHash}`;
 
     const document = await saveToKnowledge({
       conversationId,
@@ -235,6 +258,8 @@ router.post('/:conversationId/knowledge', async (req, res) => {
       metadata: {
         savedAt: new Date().toISOString(),
       },
+      dedupeKey: baseDedupeKey,
+      normalizedTitle,
     });
 
     logger.info(`[POST /api/teams/:conversationId/knowledge] Saved "${title}" to knowledge base`);
@@ -245,7 +270,9 @@ router.post('/:conversationId/knowledge', async (req, res) => {
         documentId: document.documentId,
         title: document.title,
         createdAt: document.createdAt,
+        updatedAt: document.updatedAt,
         tags: document.tags,
+        dedupeKey: document.dedupeKey || baseDedupeKey,
       },
     });
   } catch (error) {

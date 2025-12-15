@@ -1069,7 +1069,9 @@ export interface KnowledgeSaveResponse {
     documentId: string;
     title: string;
     createdAt: string;
+    updatedAt: string;
     tags: string[];
+    dedupeKey?: string;
   };
 }
 
@@ -1079,7 +1081,7 @@ export function getTeamKnowledge(conversationId: string): Promise<KnowledgeListR
 
 export function saveToTeamKnowledge(
   conversationId: string,
-  data: { title: string; content: string; messageId?: string; tags?: string[] },
+  data: { title: string; content: string; messageId?: string; tags?: string[]; dedupeKey?: string },
 ): Promise<KnowledgeSaveResponse> {
   return request.post(endpoints.teamKnowledge(conversationId), data);
 }

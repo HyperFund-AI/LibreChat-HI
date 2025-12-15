@@ -1,9 +1,13 @@
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { Constants, ContentTypes } = require('librechat-data-provider');
-const { getMessages, saveMessage, saveConvo, getConvo } = require('~/models');
+const { getMessages, saveMessage, saveConvo, getConvo, saveToKnowledge } = require('~/models');
 const { getTeamAgents } = require('~/models/Conversation');
 const { orchestrateTeamResponse } = require('~/server/services/Teams');
+const {
+  extractArtifactsWithMetadata,
+  getArtifactDedupeKey,
+} = require('~/server/utils/artifactUtils');
 
 /**
  * Team Chat Controller - Handles conversations with team collaboration
@@ -168,6 +172,49 @@ const teamChatController = async (req, res) => {
 
     // Save response message
     await saveMessage(req, responseMessage, { context: 'teamChatController - team response' });
+
+    // Extract and save any artifacts to the knowledge base
+    try {
+      const artifacts = extractArtifactsWithMetadata(orchestrationResult.formattedResponse);
+
+      if (artifacts.length > 0) {
+        logger.info(
+          `[teamChatController] Found ${artifacts.length} artifacts to save to Knowledge`,
+        );
+
+        for (const artifact of artifacts) {
+          try {
+            const dedupeKey = getArtifactDedupeKey({
+              conversationId,
+              title: artifact.title,
+              identifier: artifact.identifier,
+            });
+
+            await saveToKnowledge({
+              conversationId,
+              dedupeKey,
+              title: artifact.title || 'Untitled Artifact',
+              content: artifact.content,
+              messageId: responseMessageId,
+              createdBy: responseMessage.sender, // 'Team' or specific agent name if obtainable
+              tags: artifact.type ? [artifact.type] : [],
+              metadata: {
+                savedAt: new Date().toISOString(),
+                identifier: artifact.identifier,
+                type: artifact.type,
+              },
+              onlyUpdate: true,
+            });
+          } catch (artifactErr) {
+            logger.error('[teamChatController] Error saving artifact to KB:', artifactErr);
+            // Continue with other artifacts
+          }
+        }
+      }
+    } catch (kbError) {
+      logger.error('[teamChatController] Error processing artifacts for KB:', kbError);
+      // Non-blocking error
+    }
 
     // Update conversation
     const convoUpdate = {

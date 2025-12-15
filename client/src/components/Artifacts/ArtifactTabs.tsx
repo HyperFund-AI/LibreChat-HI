@@ -19,13 +19,16 @@ export default function ArtifactTabs({
 }: {
   artifact: Artifact;
   editorRef: React.MutableRefObject<CodeEditorRef>;
-  previewRef: React.MutableRefObject<SandpackPreviewRef>;
+  previewRef?: React.MutableRefObject<SandpackPreviewRef>;
   isSharedConvo?: boolean;
 }) {
   const { isSubmitting } = useArtifactsContext();
   const { currentCode, setCurrentCode } = useCodeState();
   const { data: startupConfig } = useGetStartupConfig();
   const lastIdRef = useRef<string | null>(null);
+  const defaultPreviewRef = useRef<SandpackPreviewRef>();
+  const effectivePreviewRef = (previewRef ??
+    defaultPreviewRef) as React.MutableRefObject<SandpackPreviewRef>;
 
   useEffect(() => {
     if (artifact.id !== lastIdRef.current) {
@@ -42,7 +45,8 @@ export default function ArtifactTabs({
 
   return (
     <div className="flex h-full w-full flex-col">
-      <Tabs.Content
+      {/* Code tab hidden - showing Preview only */}
+      {/* <Tabs.Content
         ref={contentRef}
         value="code"
         id="artifacts-code"
@@ -58,14 +62,18 @@ export default function ArtifactTabs({
           sharedProps={sharedProps}
           readOnly={isSharedConvo}
         />
-      </Tabs.Content>
+      </Tabs.Content> */}
 
-      <Tabs.Content value="preview" className="h-full w-full flex-grow overflow-auto" tabIndex={-1}>
+      <Tabs.Content
+        value="preview"
+        className="h-full w-full flex-grow overflow-auto p-0"
+        tabIndex={-1}
+      >
         <ArtifactPreview
           files={files}
           fileKey={fileKey}
           template={template}
-          previewRef={previewRef}
+          previewRef={effectivePreviewRef}
           sharedProps={sharedProps}
           currentCode={currentCode}
           startupConfig={startupConfig}

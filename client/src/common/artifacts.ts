@@ -25,3 +25,11 @@ export type ArtifactFiles =
   | Partial<{
       [x: string]: string | undefined;
     }>;
+
+export const normalizeKeyPart = (value: string) =>
+  String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_-]/g, '')
+    .slice(0, 64);
