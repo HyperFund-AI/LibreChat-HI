@@ -194,16 +194,6 @@ const MessageRender = memo(
                   siblingIdx={siblingIdx ?? 0}
                   setSiblingIdx={setSiblingIdx ?? (() => ({}))}
                 />
-                {/* Team document actions for completed team collaboration responses */}
-                {!msg.isCreatedByUser &&
-                  !effectiveIsSubmitting &&
-                  (msg.sender === 'Team' || msg.model === 'team-collaboration') && (
-                    <TeamDocumentActions
-                      content={msg.text || ''}
-                      messageId={msg.messageId}
-                      isTeamResponse={true}
-                    />
-                  )}
               </MessageContext.Provider>
             </div>
             {hasNoChildren && (isSubmittingFamily === true || effectiveIsSubmitting) ? (
