@@ -7,6 +7,152 @@ const Anthropic = require('@anthropic-ai/sdk');
 const ORCHESTRATOR_ANTHROPIC_MODEL = 'claude-sonnet-4-5';
 
 /**
+ * In-memory cache for orchestration state when waiting for user input
+ * Key: conversationId, Value: { state, timestamp }
+ * Auto-expires after 30 minutes
+ */
+const orchestrationStateCache = new Map();
+const ORCHESTRATION_STATE_TTL = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Save orchestration state for a conversation
+ */
+const saveOrchestrationState = (conversationId, state) => {
+  orchestrationStateCache.set(conversationId, {
+    state,
+    timestamp: Date.now(),
+  });
+  logger.info(`[orchestrationState] Saved state for conversation ${conversationId}`);
+};
+
+/**
+ * Get and clear orchestration state for a conversation
+ */
+const getOrchestrationState = (conversationId) => {
+  const cached = orchestrationStateCache.get(conversationId);
+  if (!cached) {
+    return null;
+  }
+
+  // Check if expired
+  if (Date.now() - cached.timestamp > ORCHESTRATION_STATE_TTL) {
+    orchestrationStateCache.delete(conversationId);
+    logger.info(`[orchestrationState] State expired for conversation ${conversationId}`);
+    return null;
+  }
+
+  // Return and keep state (don't clear yet - clear after successful resume)
+  logger.info(`[orchestrationState] Retrieved state for conversation ${conversationId}`);
+  return cached.state;
+};
+
+/**
+ * Clear orchestration state for a conversation
+ */
+const clearOrchestrationState = (conversationId) => {
+  orchestrationStateCache.delete(conversationId);
+  logger.info(`[orchestrationState] Cleared state for conversation ${conversationId}`);
+};
+
+// Cleanup expired states periodically (every 5 minutes)
+setInterval(() => {
+  const now = Date.now();
+  let cleared = 0;
+  for (const [key, value] of orchestrationStateCache.entries()) {
+    if (now - value.timestamp > ORCHESTRATION_STATE_TTL) {
+      orchestrationStateCache.delete(key);
+      cleared++;
+    }
+  }
+  if (cleared > 0) {
+    logger.debug(`[orchestrationState] Cleaned up ${cleared} expired states`);
+  }
+}, 5 * 60 * 1000);
+
+/**
+ * Stream text incrementally to simulate typing effect
+ * @param {string} text - Text to stream
+ * @param {function} onStream - Callback for each chunk
+ * @param {number} chunkSize - Characters per chunk (default: 5)
+ * @param {number} delay - Delay between chunks in ms (default: 10)
+ */
+const streamTextIncrementally = async (text, onStream, chunkSize = 5, delay = 10) => {
+  if (!onStream || !text) return;
+
+  for (let i = 0; i < text.length; i += chunkSize) {
+    const chunk = text.slice(i, i + chunkSize);
+    onStream(chunk);
+    if (delay > 0 && i + chunkSize < text.length) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+};
+
+/**
+ * Tool definition for inter-specialist collaboration
+ * Allows specialists to request information from colleagues mid-execution
+ */
+const REQUEST_FROM_COLLEAGUE_TOOL = {
+  name: 'request_from_colleague',
+  description:
+    'Request specific information, data, or expert input from a colleague specialist. Use this when you need expertise outside your domain or need to verify/cross-reference information with another team member.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      colleague_role: {
+        type: 'string',
+        description:
+          'The role or expertise area of the colleague you need (e.g., "Engineering Technical Lead", "Environmental Specialist", "Regulatory Strategy"). Will be matched to the most relevant team member.',
+      },
+      question: {
+        type: 'string',
+        description:
+          'Your specific question or information request. Be precise about what you need to know.',
+      },
+      context: {
+        type: 'string',
+        description:
+          'Brief context about why you need this information and how it relates to your analysis.',
+      },
+    },
+    required: ['colleague_role', 'question'],
+  },
+};
+
+/**
+ * Tool definition for asking the user/client for clarification
+ * Allows specialists to request additional information from the user mid-execution
+ */
+const ASK_USER_TOOL = {
+  name: 'ask_user_in_conversation',
+  description:
+    'Ask the user/client a question to get clarification or additional information needed for your analysis. Use this when critical information is missing from the original request, when you need to confirm assumptions, or when user input would significantly improve the quality of your deliverable.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      question: {
+        type: 'string',
+        description:
+          'Your question to the user. Be clear and specific about what information you need and why it matters for the analysis.',
+      },
+      options: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'Optional list of suggested answers or options to help guide the user response (e.g., ["Option A: Focus on cost", "Option B: Focus on timeline", "Option C: Balanced approach"]).',
+      },
+      importance: {
+        type: 'string',
+        enum: ['critical', 'important', 'helpful'],
+        description:
+          'How important is this information? "critical" = cannot proceed without it, "important" = significantly affects quality, "helpful" = would improve but not essential.',
+      },
+    },
+    required: ['question', 'importance'],
+  },
+};
+
+/**
  * Helper to safely extract text content from a message
  * Handles both string content and array of content blocks
  */
@@ -174,8 +320,122 @@ Respond in JSON format according to schema.`;
 };
 
 /**
+ * Find the best matching colleague for a collaboration request
+ * Matches by role, expertise, or name keywords
+ */
+const findColleague = (targetRole, availableSpecialists, excludeAgent = null) => {
+  const searchTerms = targetRole.toLowerCase().split(/\s+/);
+
+  // Score each specialist by how well they match the request
+  const scored = availableSpecialists
+    .filter((s) => !excludeAgent || s.name !== excludeAgent.name)
+    .map((specialist) => {
+      const searchableText = `${specialist.name} ${specialist.role} ${specialist.expertise || ''} ${specialist.responsibilities || ''}`.toLowerCase();
+
+      let score = 0;
+      for (const term of searchTerms) {
+        if (searchableText.includes(term)) {
+          score += term.length > 3 ? 2 : 1; // Longer terms get more weight
+        }
+      }
+
+      // Exact role match gets bonus
+      if (specialist.role.toLowerCase().includes(targetRole.toLowerCase())) {
+        score += 5;
+      }
+
+      return { specialist, score };
+    })
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  return scored.length > 0 ? scored[0].specialist : null;
+};
+
+/**
+ * Execute a focused query to a colleague specialist
+ * Lightweight function for answering inter-team questions
+ */
+const executeColleagueQuery = async ({
+  colleague,
+  question,
+  context,
+  requestingAgent,
+  userMessage,
+  apiKey,
+  onThinking,
+}) => {
+  logger.info(
+    `[executeColleagueQuery] ${requestingAgent.name} requesting info from ${colleague.name}: "${question.substring(0, 50)}..."`,
+  );
+
+  if (onThinking) {
+    onThinking({
+      agent: colleague.name,
+      role: colleague.role,
+      action: 'responding',
+      message: `Responding to ${requestingAgent.name}'s question...`,
+    });
+  }
+
+  const systemPrompt = `You are ${colleague.name}, a ${colleague.role}.
+
+${colleague.instructions || ''}
+
+Your expertise: ${colleague.expertise || colleague.responsibilities || 'Specialist'}
+
+A colleague (${requestingAgent.name}, ${requestingAgent.role}) is asking you a direct question during a team collaboration.
+Answer concisely and specifically - they need actionable information to continue their analysis.
+
+Guidelines:
+- Be direct and specific
+- Focus only on answering their question
+- Provide data/facts where relevant
+- Keep response focused (100-200 words max)
+- If you need to qualify your answer, do so briefly`;
+
+  const client = new Anthropic({ apiKey });
+
+  const response = await client.messages.create({
+    model: colleague.model || ORCHESTRATOR_ANTHROPIC_MODEL,
+    max_tokens: 800,
+    system: systemPrompt,
+    messages: [
+      {
+        role: 'user',
+        content: `**Question from ${requestingAgent.name} (${requestingAgent.role}):**
+
+${question}
+
+${context ? `**Context:** ${context}` : ''}
+
+**Original project objective:** ${userMessage}`,
+      },
+    ],
+  });
+
+  const responseText = response.content[0]?.text || '';
+
+  if (onThinking) {
+    onThinking({
+      agent: colleague.name,
+      role: colleague.role,
+      action: 'responded',
+      message: `Provided information to ${requestingAgent.name}`,
+    });
+  }
+
+  logger.info(
+    `[executeColleagueQuery] ${colleague.name} responded with ${responseText.length} chars`,
+  );
+
+  return responseText;
+};
+
+/**
  * Phase 2: Execute selected specialists with visible progress and streaming thinking
  * Now supports collaborative chain - each specialist sees previous contributions
+ * Supports tool-based collaboration to request info from colleagues
  */
 const executeSpecialist = async ({
   agent,
@@ -187,9 +447,13 @@ const executeSpecialist = async ({
   conversationHistory = [],
   fileContext = '',
   knowledgeContext = '',
+  availableSpecialists = [],
 }) => {
   logger.info(
-    `[executeSpecialist] Called for ${agent.name}, onThinking callback: ${onThinking ? 'present' : 'MISSING'}, previous contributions: ${previousContributions.length}`,
+    `[executeSpecialist] Called for ${agent.name}, onThinking callback: ${onThinking ? 'present' : 'MISSING'}, previous contributions: ${previousContributions.length}, available colleagues: ${availableSpecialists.length}`,
+  );
+  logger.debug(
+    `[executeSpecialist] Available specialists for ${agent.name}: ${availableSpecialists.map((s) => `${s.name} (${s.role})`).join(', ')}`,
   );
 
   if (onThinking) {
@@ -257,6 +521,16 @@ ${knowledgeContext}
 `;
   }
 
+  // Build list of available colleagues for tool description
+  const colleaguesList = availableSpecialists
+    .filter((s) => s.name !== agent.name)
+    .map((s) => `- ${s.name} (${s.role}): ${s.expertise || s.responsibilities || 'Specialist'}`)
+    .join('\n');
+
+  logger.debug(
+    `[executeSpecialist] Colleagues list for ${agent.name} (excluding self): ${colleaguesList || 'NONE'}`,
+  );
+
   const collaborationGuidelines =
     previousContributions.length > 0
       ? `
@@ -269,6 +543,59 @@ COLLABORATION GUIDELINES:
 - If you disagree with a previous point, explain your reasoning
 - Connect your analysis to the team's emerging picture`
       : '';
+
+  // Build tool instructions - always include ask_user, conditionally include colleague collaboration
+  const askUserInstructions = `
+ASKING THE USER/CLIENT:
+You have access to the 'ask_user_in_conversation' tool to request clarification or additional information from the user.
+
+**When to ask the user:**
+- Critical information is missing that significantly affects your analysis
+- You need to confirm important assumptions before proceeding
+- The user's preferences or priorities would change your recommendations
+- Multiple valid approaches exist and user input would help choose
+
+**How to ask effectively:**
+- Be specific about what you need to know
+- Indicate the importance level:
+  - "critical" = STOPS analysis, question is presented to user, you must wait for their response
+  - "important" = affects quality, proceed with stated assumptions
+  - "helpful" = nice to have, proceed with best judgment
+- Provide options when applicable to guide the user's response
+
+**IMPORTANT behavior:**
+- For "critical" questions: Your OUTPUT must present the question directly to the user and wait for their response. Do NOT make assumptions on critical matters.
+- For "important"/"helpful" questions: Proceed with reasonable assumptions, clearly stated in your output.`;
+
+  const colleagueInstructions =
+    availableSpecialists.length > 1
+      ? `
+
+TEAM COLLABORATION:
+You have access to the 'request_from_colleague' tool to ask questions to other team members in real-time.
+
+**When to consult colleagues:**
+- You encounter something outside your expertise that another specialist can clarify
+- You need to verify or cross-reference data/findings with a colleague
+- You identify a gap that requires input from another domain (e.g., "What species are we dealing with?" to an environmental specialist)
+- You want to validate your methodology or assumptions with a relevant expert
+
+**How to collaborate effectively:**
+- Be specific in your question - state exactly what you need to know
+- Provide brief context about why you need this information
+- After receiving colleague input, integrate their response into your analysis
+
+**Available colleagues you can consult:**
+${colleaguesList}
+
+**IMPORTANT:** When you identify a genuine need for another specialist's input, USE THE TOOL immediately rather than making assumptions.`
+      : '';
+
+  const toolInstructions = `${askUserInstructions}${colleagueInstructions}`;
+
+  logger.info(
+    `[executeSpecialist] Tool instructions for ${agent.name}: ${toolInstructions ? 'INCLUDED' : 'NOT INCLUDED'} (availableSpecialists.length=${availableSpecialists.length})`,
+  );
 
   const systemPrompt = `You are ${agent.name}, a ${agent.role}.
 
@@ -295,15 +622,9 @@ Guidelines:
 - Use bullet points in the output
 - Keep output focused (200-300 words)
 - Provide expert insights
-${collaborationGuidelines}`;
+${collaborationGuidelines}${toolInstructions}`;
 
   const client = new Anthropic({ apiKey });
-
-  let accumulatedText = '';
-  let thinkingText = '';
-  let outputText = '';
-  let lastThinkingSent = '';
-  let chunkCount = 0;
 
   // Build the user message with all available context
   const hasContext = previousContributions.length > 0 || conversationContext || additionalContext;
@@ -311,60 +632,320 @@ ${collaborationGuidelines}`;
     ? `# Objective\n${userMessage}\n\n# Your Assignment\n${assignment || 'Provide your specialist analysis.'}\n\n${additionalContext}${conversationContext}${collaborationContext}`
     : `Objective: ${userMessage}\n\nYour Assignment: ${assignment || 'Provide your specialist analysis.'}`;
 
-  // Use streaming to get real-time thinking process
-  const stream = client.messages.stream({
-    model: agent.model || ORCHESTRATOR_ANTHROPIC_MODEL,
-    max_tokens: 2000,
-    system: systemPrompt,
-    messages: [
-      {
-        role: 'user',
-        content: userContent,
-      },
-    ],
-  });
+  // Prepare messages array for potential continuation after tool use
+  let messages = [{ role: 'user', content: userContent }];
 
-  logger.info(`[executeSpecialist] Starting stream for ${agent.name}`);
+  // Build tools array - always include ask_user, add colleague tool if colleagues available
+  const tools = [ASK_USER_TOOL];
+  if (availableSpecialists.length > 1) {
+    tools.push(REQUEST_FROM_COLLEAGUE_TOOL);
+  }
 
-  // Stream each chunk and extract thinking in real-time
-  for await (const event of stream) {
-    if (event.type === 'content_block_delta' && event.delta?.text) {
-      const chunk = event.delta.text;
-      accumulatedText += chunk;
-      chunkCount++;
+  logger.info(
+    `[executeSpecialist] Tools for ${agent.name}: ${tools.length} tools (ask_user=YES, colleagues=${availableSpecialists.length > 1 ? 'YES' : 'NO'})`,
+  );
+  logger.debug(`[executeSpecialist] Tool names: ${tools.map((t) => t.name).join(', ')}`);
 
-      // Log every 10 chunks to show progress
-      if (chunkCount % 10 === 0) {
-        logger.info(
-          `[executeSpecialist] ${agent.name} received ${chunkCount} chunks, ${accumulatedText.length} chars total`,
-        );
-      }
+  /**
+   * Inner function to execute the streaming request and handle responses
+   * Returns { text, toolUse } where toolUse is set if the model wants to use a tool
+   */
+  const executeStreamingRequest = async (msgs) => {
+    let accumulatedText = '';
+    let thinkingText = '';
+    let lastThinkingSent = '';
+    let chunkCount = 0;
+    let toolUseBlock = null;
+    let currentToolInput = '';
 
-      // Try to extract thinking section as it streams
-      const thinkingMatch = accumulatedText.match(/<THINKING>([\s\S]*?)(?:<\/THINKING>|$)/i);
-      if (thinkingMatch && thinkingMatch[1]) {
-        const currentThinking = thinkingMatch[1].trim();
+    const streamOptions = {
+      model: agent.model || ORCHESTRATOR_ANTHROPIC_MODEL,
+      max_tokens: 2000,
+      system: systemPrompt,
+      messages: msgs,
+    };
 
-        // Send updates every few chunks or when thinking content grows significantly
-        if (currentThinking.length > lastThinkingSent.length + 50 || chunkCount % 5 === 0) {
-          thinkingText = currentThinking;
-          lastThinkingSent = currentThinking;
+    if (tools) {
+      streamOptions.tools = tools;
+    }
 
-          if (onThinking) {
-            logger.info(
-              `[executeSpecialist] Sending thinking update for ${agent.name}: ${currentThinking.length} chars`,
-            );
-            onThinking({
-              agent: agent.name,
-              role: agent.role,
-              action: 'thinking',
-              message:
-                currentThinking.substring(0, 100) + (currentThinking.length > 100 ? '...' : ''),
-              thinking: currentThinking,
-            });
+    logger.info(
+      `[executeSpecialist] Stream options for ${agent.name}: model=${streamOptions.model}, max_tokens=${streamOptions.max_tokens}, tools=${streamOptions.tools ? 'YES' : 'NO'}`,
+    );
+    logger.debug(
+      `[executeSpecialist] System prompt includes tool instructions: ${systemPrompt.includes('request_from_colleague')}`,
+    );
+
+    const stream = client.messages.stream(streamOptions);
+
+    logger.info(`[executeSpecialist] Starting stream for ${agent.name}`);
+
+    // Stream each chunk and extract thinking in real-time
+    for await (const event of stream) {
+      // Handle text content
+      if (event.type === 'content_block_delta' && event.delta?.text) {
+        const chunk = event.delta.text;
+        accumulatedText += chunk;
+        chunkCount++;
+
+        // Log every 10 chunks to show progress
+        // if (chunkCount % 10 === 0) {
+        //   logger.info(
+        //     `[executeSpecialist] ${agent.name} received ${chunkCount} chunks, ${accumulatedText.length} chars total`,
+        //   );
+        // }
+
+        // Try to extract thinking section as it streams
+        const thinkingMatch = accumulatedText.match(/<THINKING>([\s\S]*?)(?:<\/THINKING>|$)/i);
+        if (thinkingMatch && thinkingMatch[1]) {
+          const currentThinking = thinkingMatch[1].trim();
+
+          // Send updates every few chunks or when thinking content grows significantly
+          if (currentThinking.length > lastThinkingSent.length + 50 || chunkCount % 5 === 0) {
+            thinkingText = currentThinking;
+            lastThinkingSent = currentThinking;
+
+            if (onThinking) {
+              // logger.info(
+              //   `[executeSpecialist] Sending thinking update for ${agent.name}: ${currentThinking.length} chars`,
+              // );
+              onThinking({
+                agent: agent.name,
+                role: agent.role,
+                action: 'thinking',
+                message:
+                  currentThinking.substring(0, 100) + (currentThinking.length > 100 ? '...' : ''),
+                thinking: currentThinking,
+              });
+            }
           }
         }
       }
+
+      // Handle tool use content block start
+      if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+        toolUseBlock = {
+          id: event.content_block.id,
+          name: event.content_block.name,
+          input: {},
+        };
+        currentToolInput = '';
+        logger.info(
+          `[executeSpecialist] ${agent.name} starting tool use: ${event.content_block.name}`,
+        );
+      }
+
+      // Handle tool use input delta
+      if (event.type === 'content_block_delta' && event.delta?.partial_json) {
+        currentToolInput += event.delta.partial_json;
+      }
+
+      // Handle tool use content block stop
+      if (event.type === 'content_block_stop' && toolUseBlock) {
+        try {
+          toolUseBlock.input = JSON.parse(currentToolInput);
+          logger.info(
+            `[executeSpecialist] ${agent.name} tool input parsed: ${JSON.stringify(toolUseBlock.input)}`,
+          );
+        } catch (e) {
+          logger.warn(`[executeSpecialist] Failed to parse tool input: ${currentToolInput}`);
+          toolUseBlock.input = { error: 'Failed to parse input' };
+        }
+      }
+
+      // Log message delta events to see stop reason
+      if (event.type === 'message_delta') {
+        logger.info(
+          `[executeSpecialist] ${agent.name} message_delta: stop_reason=${event.delta?.stop_reason}`,
+        );
+      }
+    }
+
+    logger.info(
+      `[executeSpecialist] ${agent.name} stream complete. Total: ${accumulatedText.length} chars, ${chunkCount} chunks, toolUse: ${toolUseBlock ? 'yes' : 'no'}`,
+    );
+
+    return { text: accumulatedText, toolUse: toolUseBlock, thinkingText, lastThinkingSent };
+  };
+
+  // Execute initial request
+  let result = await executeStreamingRequest(messages);
+  let accumulatedText = result.text;
+  let thinkingText = result.thinkingText;
+  let lastThinkingSent = result.lastThinkingSent;
+
+  // Handle tool use if the model requested it
+  if (result.toolUse) {
+    const toolInput = result.toolUse.input;
+    let toolResult;
+
+    if (result.toolUse.name === 'ask_user_in_conversation') {
+      // Handle user question tool
+      logger.info(
+        `[executeSpecialist] ${agent.name} asking user (${toolInput.importance}): ${toolInput.question}`,
+      );
+
+      if (onThinking) {
+        onThinking({
+          agent: agent.name,
+          role: agent.role,
+          action: 'asking_user',
+          importance: toolInput.importance,
+          message: `Question for user: ${toolInput.question}`,
+          question: toolInput.question,
+          options: toolInput.options,
+        });
+      }
+
+      // Ensure options is an array (model might send it as string or other format)
+      const optionsArray = Array.isArray(toolInput.options) ? toolInput.options : [];
+      const optionsText = optionsArray.length > 0
+        ? `\n\nOptions:\n${optionsArray.map((o, i) => `${i + 1}. ${o}`).join('\n')}`
+        : '';
+
+      if (toolInput.importance === 'critical') {
+        // For CRITICAL questions, STOP execution and return pending question
+        logger.info(
+          `[executeSpecialist] ${agent.name} has CRITICAL question - halting for user input`,
+        );
+
+        // Return early with pending question - don't continue the conversation
+        return {
+          response: accumulatedText || '',
+          pendingQuestion: {
+            agent: agent.name,
+            agentRole: agent.role,
+            question: toolInput.question,
+            options: optionsArray,
+            importance: 'critical',
+            context: toolInput.context,
+          },
+        };
+      } else {
+        // For non-critical questions, proceed with assumptions
+        toolResult = `Your question has been noted: "${toolInput.question}"${optionsText}
+
+Since this is marked as "${toolInput.importance}" (not critical), please proceed with your analysis using reasonable assumptions. Clearly state your assumptions in the output so the user can validate or correct them.`;
+      }
+    } else if (result.toolUse.name === 'request_from_colleague') {
+      // Handle colleague request tool
+      logger.info(
+        `[executeSpecialist] ${agent.name} requesting info from colleague: ${toolInput.colleague_role}`,
+      );
+
+      if (onThinking) {
+        onThinking({
+          agent: agent.name,
+          role: agent.role,
+          action: 'requesting_colleague',
+          message: `Requesting information from ${toolInput.colleague_role}...`,
+        });
+      }
+
+      // Find the matching colleague
+      const colleague = findColleague(toolInput.colleague_role, availableSpecialists, agent);
+
+      if (colleague) {
+        // Execute the colleague query
+        const colleagueResponse = await executeColleagueQuery({
+          colleague,
+          question: toolInput.question,
+          context: toolInput.context,
+          requestingAgent: agent,
+          userMessage,
+          apiKey,
+          onThinking,
+        });
+        toolResult = `**Response from ${colleague.name} (${colleague.role}):**\n\n${colleagueResponse}`;
+      } else {
+        logger.warn(
+          `[executeSpecialist] Could not find colleague matching: ${toolInput.colleague_role}`,
+        );
+        toolResult = `Could not find a colleague matching "${toolInput.colleague_role}". Available team members are: ${availableSpecialists.map((s) => s.role).join(', ')}. Please proceed with your analysis using available information.`;
+      }
+    } else {
+      // Unknown tool
+      logger.warn(`[executeSpecialist] Unknown tool called: ${result.toolUse.name}`);
+      toolResult = `Unknown tool: ${result.toolUse.name}. Please proceed with your analysis.`;
+    }
+
+    // Continue the conversation with the tool result
+    logger.debug(
+      `[executeSpecialist] Building continuation messages. accumulatedText length: ${accumulatedText.length}, toolUse.id: ${result.toolUse.id}`,
+    );
+
+    const assistantContent = [
+      ...(accumulatedText ? [{ type: 'text', text: accumulatedText }] : []),
+      {
+        type: 'tool_use',
+        id: result.toolUse.id,
+        name: result.toolUse.name,
+        input: result.toolUse.input,
+      },
+    ];
+
+    messages.push({
+      role: 'assistant',
+      content: assistantContent,
+    });
+
+    messages.push({
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: result.toolUse.id,
+          content: toolResult,
+        },
+      ],
+    });
+
+    logger.debug(
+      `[executeSpecialist] Tool result content: ${toolResult.substring(0, 100)}...`,
+    );
+
+    // Determine continuation message based on tool type
+    const continuationMessage =
+      result.toolUse.name === 'ask_user_in_conversation'
+        ? `Proceeding with analysis (user question noted)...`
+        : `Received colleague input, continuing analysis...`;
+
+    if (onThinking) {
+      onThinking({
+        agent: agent.name,
+        role: agent.role,
+        action: 'continuing',
+        message: continuationMessage,
+      });
+    }
+
+    logger.info(
+      `[executeSpecialist] ${agent.name} continuing after tool use: ${result.toolUse.name}`,
+    );
+    logger.debug(
+      `[executeSpecialist] Messages for continuation: ${messages.length} messages, last message role: ${messages[messages.length - 1]?.role}`,
+    );
+
+    // Execute continuation request
+    try {
+      const continuationResult = await executeStreamingRequest(messages);
+      accumulatedText += '\n\n' + continuationResult.text;
+      if (continuationResult.thinkingText) {
+        thinkingText = continuationResult.thinkingText;
+      }
+      if (continuationResult.lastThinkingSent) {
+        lastThinkingSent = continuationResult.lastThinkingSent;
+      }
+
+      logger.info(
+        `[executeSpecialist] ${agent.name} continuation complete, accumulated ${accumulatedText.length} chars`,
+      );
+    } catch (continuationError) {
+      logger.error(
+        `[executeSpecialist] ${agent.name} continuation FAILED: ${continuationError.message}`,
+      );
+      logger.error(`[executeSpecialist] Continuation error stack: ${continuationError.stack}`);
+      // Don't throw - allow the function to complete with what we have
     }
   }
 
@@ -372,6 +953,7 @@ ${collaborationGuidelines}`;
   const finalThinkingMatch = accumulatedText.match(/<THINKING>([\s\S]*?)<\/THINKING>/i);
   const finalOutputMatch = accumulatedText.match(/<OUTPUT>([\s\S]*?)<\/OUTPUT>/i);
 
+  let outputText = '';
   if (finalThinkingMatch) {
     thinkingText = finalThinkingMatch[1].trim();
   }
@@ -379,9 +961,6 @@ ${collaborationGuidelines}`;
     outputText = finalOutputMatch[1].trim();
   }
 
-  logger.info(
-    `[executeSpecialist] ${agent.name} stream complete. Total: ${accumulatedText.length} chars, ${chunkCount} chunks`,
-  );
   logger.info(
     `[executeSpecialist] ${agent.name} has THINKING tag: ${accumulatedText.includes('<THINKING>')}, has OUTPUT tag: ${accumulatedText.includes('<OUTPUT>')}`,
   );
@@ -394,7 +973,7 @@ ${collaborationGuidelines}`;
     outputText = accumulatedText;
   } else if (!outputText) {
     // If we have thinking but no output, the output might come after thinking without tags
-    const afterThinking = accumulatedText.replace(/<THINKING>[\s\S]*?<\/THINKING>/i, '').trim();
+    const afterThinking = accumulatedText.replace(/<THINKING>[\s\S]*?<\/THINKING>/gi, '').trim();
     if (afterThinking) {
       outputText = afterThinking;
     }
@@ -431,8 +1010,11 @@ ${collaborationGuidelines}`;
     `[executeSpecialist] ${agent.name} completed - thinking: ${thinkingText.length} chars, output: ${outputText.length} chars`,
   );
 
-  // Return only the output part (or fallback to accumulated text)
-  return outputText || accumulatedText;
+  // Return response object (consistent format with pendingQuestion case)
+  return {
+    response: outputText || accumulatedText,
+    pendingQuestion: null,
+  };
 };
 
 const isArtifactComplete = (text) => {
@@ -671,7 +1253,309 @@ If there is no deliverable ready - for example, more information from the user w
 };
 
 /**
+ * Resume orchestration after user answered a critical question
+ */
+const resumeOrchestration = async ({
+  pendingState,
+  userMessage, // User's answer to the question
+  teamAgents,
+  conversationHistory,
+  fileContext,
+  knowledgeContext,
+  config,
+  conversationId,
+  onAgentStart,
+  onAgentComplete,
+  onThinking,
+  onStream,
+}) => {
+  const apiKey = config?.endpoints?.anthropic?.apiKey || process.env.ANTHROPIC_API_KEY;
+
+  const {
+    workPlan,
+    specialistInputs,
+    responses,
+    selectedSpecialists,
+    stoppedAtSpecialistIndex,
+    pendingQuestion,
+    lead,
+    originalUserMessage,
+  } = pendingState;
+
+  logger.info(
+    `[resumeOrchestration] Resuming with user answer: "${userMessage.substring(0, 100)}..."`,
+  );
+  logger.info(
+    `[resumeOrchestration] Resuming from specialist ${stoppedAtSpecialistIndex}, ${specialistInputs.length} inputs accumulated`,
+  );
+
+  // Clear the pending state since we're resuming
+  clearOrchestrationState(conversationId);
+
+  // Find the specialist agent objects from teamAgents
+  const specialists = teamAgents.filter((a) => parseInt(a.tier) !== 3 && parseInt(a.tier) !== 5);
+  const fullSelectedSpecialists = selectedSpecialists.map((saved) => {
+    const found = specialists.find((s) => s.name === saved.name);
+    return found || saved; // Fallback to saved if not found
+  });
+
+  // Get the full lead agent
+  const fullLead = teamAgents.find((a) => a.name === lead.name) || lead;
+
+  // Resume from where we stopped
+  let currentSpecialistInputs = [...specialistInputs];
+  let currentResponses = [...responses];
+  let pendingUserQuestion = null;
+  let newStoppedAtIndex = -1;
+
+  // The specialist that asked the question needs to continue with the user's answer
+  const stoppedSpecialist = fullSelectedSpecialists[stoppedAtSpecialistIndex];
+
+  if (stoppedSpecialist) {
+    if (onAgentStart) onAgentStart(stoppedSpecialist);
+
+    if (onThinking) {
+      onThinking({
+        agent: stoppedSpecialist.name,
+        role: stoppedSpecialist.role,
+        action: 'continuing',
+        message: `Received user response, continuing analysis...`,
+      });
+    }
+
+    // Re-run the stopped specialist with the user's answer as additional context
+    const idx = specialists.indexOf(stoppedSpecialist) + 1;
+    const assignment =
+      workPlan.assignments?.[idx.toString()] || workPlan.assignments?.[idx] || '';
+
+    // Build context that includes the original question and user's answer
+    const resumeContext = `
+## User Response to Your Question
+You previously asked: "${pendingQuestion.question}"
+
+User's response: "${userMessage}"
+
+Please continue your analysis incorporating this information.
+`;
+
+    const specialistResult = await executeSpecialist({
+      agent: stoppedSpecialist,
+      assignment: assignment + resumeContext,
+      userMessage: originalUserMessage,
+      apiKey,
+      onThinking,
+      previousContributions: currentSpecialistInputs.filter((i) => !i.hasPendingQuestion),
+      conversationHistory,
+      fileContext,
+      knowledgeContext,
+      availableSpecialists: fullSelectedSpecialists,
+    });
+
+    // Check if this specialist has another pending question
+    if (specialistResult.pendingQuestion) {
+      logger.info(
+        `[resumeOrchestration] ${stoppedSpecialist.name} has another pending question`,
+      );
+      pendingUserQuestion = specialistResult.pendingQuestion;
+      newStoppedAtIndex = stoppedAtSpecialistIndex;
+    } else {
+      // Replace the partial input with the complete one
+      const existingIndex = currentSpecialistInputs.findIndex(
+        (i) => i.name === stoppedSpecialist.name,
+      );
+      if (existingIndex >= 0) {
+        currentSpecialistInputs[existingIndex] = {
+          name: stoppedSpecialist.name,
+          role: stoppedSpecialist.role,
+          response: specialistResult.response,
+        };
+      } else {
+        currentSpecialistInputs.push({
+          name: stoppedSpecialist.name,
+          role: stoppedSpecialist.role,
+          response: specialistResult.response,
+        });
+      }
+
+      currentResponses.push({
+        agentId: stoppedSpecialist.agentId,
+        agentName: stoppedSpecialist.name,
+        agentRole: stoppedSpecialist.role,
+        response: specialistResult.response,
+      });
+
+      if (onAgentComplete)
+        onAgentComplete({
+          agentName: stoppedSpecialist.name,
+          agentRole: stoppedSpecialist.role,
+          response: specialistResult.response,
+        });
+    }
+  }
+
+  // Continue with remaining specialists (if no new pending question)
+  if (!pendingUserQuestion) {
+    for (let i = stoppedAtSpecialistIndex + 1; i < fullSelectedSpecialists.length; i++) {
+      const specialist = fullSelectedSpecialists[i];
+      if (onAgentStart) onAgentStart(specialist);
+
+      const idx = specialists.indexOf(specialist) + 1;
+      const assignment =
+        workPlan.assignments?.[idx.toString()] || workPlan.assignments?.[idx] || '';
+
+      const specialistResult = await executeSpecialist({
+        agent: specialist,
+        assignment,
+        userMessage: originalUserMessage,
+        apiKey,
+        onThinking,
+        previousContributions: [...currentSpecialistInputs],
+        conversationHistory,
+        fileContext,
+        knowledgeContext,
+        availableSpecialists: fullSelectedSpecialists,
+      });
+
+      if (specialistResult.pendingQuestion) {
+        logger.info(
+          `[resumeOrchestration] ${specialist.name} has pending question - stopping again`,
+        );
+        pendingUserQuestion = specialistResult.pendingQuestion;
+        newStoppedAtIndex = i;
+
+        if (specialistResult.response) {
+          currentSpecialistInputs.push({
+            name: specialist.name,
+            role: specialist.role,
+            response: specialistResult.response,
+            hasPendingQuestion: true,
+          });
+        }
+        break;
+      }
+
+      currentSpecialistInputs.push({
+        name: specialist.name,
+        role: specialist.role,
+        response: specialistResult.response,
+      });
+
+      currentResponses.push({
+        agentId: specialist.agentId,
+        agentName: specialist.name,
+        agentRole: specialist.role,
+        response: specialistResult.response,
+      });
+
+      if (onAgentComplete)
+        onAgentComplete({
+          agentName: specialist.name,
+          agentRole: specialist.role,
+          response: specialistResult.response,
+        });
+
+      logger.info(
+        `[resumeOrchestration] Specialist ${i + 1}/${fullSelectedSpecialists.length} (${specialist.name}) completed.`,
+      );
+    }
+  }
+
+  // If there's another pending question, save state and return
+  if (pendingUserQuestion) {
+    if (conversationId) {
+      const stateToSave = {
+        workPlan,
+        specialistInputs: currentSpecialistInputs,
+        responses: currentResponses,
+        selectedSpecialists,
+        stoppedAtSpecialistIndex: newStoppedAtIndex,
+        pendingQuestion: pendingUserQuestion,
+        lead,
+        originalUserMessage,
+      };
+      saveOrchestrationState(conversationId, stateToSave);
+    }
+
+    const optionsArray = Array.isArray(pendingUserQuestion.options) ? pendingUserQuestion.options : [];
+    const optionsText = optionsArray.length > 0
+      ? '\n\n**Options:**\n' +
+        optionsArray.map((o, i) => `${i + 1}. ${o}`).join('\n')
+      : '';
+
+    const questionMessage = `**${pendingUserQuestion.agent}** (${pendingUserQuestion.agentRole}) needs additional clarification:
+
+---
+
+${pendingUserQuestion.question}${optionsText}
+
+---
+
+_Please respond to continue the analysis._`;
+
+    // Stream the question incrementally
+    if (onStream) {
+      await streamTextIncrementally(questionMessage, onStream);
+    }
+
+    return {
+      success: true,
+      waitingForInput: true,
+      pendingQuestion: pendingUserQuestion,
+      responses: currentResponses,
+      formattedResponse: questionMessage,
+      selectedAgents: [fullLead, ...fullSelectedSpecialists.slice(0, newStoppedAtIndex + 1)].map(
+        (a) => ({
+          id: a.agentId,
+          name: a.name,
+          role: a.role,
+        }),
+      ),
+    };
+  }
+
+  // All specialists complete - synthesize
+  if (onAgentStart) onAgentStart({ ...fullLead, phase: 'synthesis' });
+
+  const finalDeliverable = await synthesizeDeliverableStreaming({
+    lead: fullLead,
+    userMessage: originalUserMessage,
+    specialistInputs: currentSpecialistInputs,
+    deliverableOutline: workPlan.deliverableOutline,
+    apiKey,
+    onThinking,
+    onStream,
+  });
+
+  const timestamp = new Date().toISOString().split('T')[0];
+  const teamCredits = `\n\n---\n\n_**Team:** ${fullLead.name} (Lead)${fullSelectedSpecialists.length > 0 ? ', ' + fullSelectedSpecialists.map((s) => s.name).join(', ') : ''} | ${timestamp}_`;
+
+  const formattedResponse = finalDeliverable + teamCredits;
+
+  if (onStream) {
+    onStream(teamCredits);
+  }
+
+  logger.info(
+    `[resumeOrchestration] Completed with ${fullSelectedSpecialists.length + 1} contributors`,
+  );
+
+  return {
+    success: true,
+    waitingForInput: false,
+    responses: currentResponses,
+    formattedResponse,
+    selectedAgents: [fullLead, ...fullSelectedSpecialists].map((a) => ({
+      id: a.agentId,
+      name: a.name,
+      role: a.role,
+    })),
+    workPlan,
+  };
+};
+
+/**
  * Main orchestration function with visible collaboration
+ * Supports resumption after user answers a critical question
  */
 const orchestrateTeamResponse = async ({
   userMessage,
@@ -680,13 +1564,14 @@ const orchestrateTeamResponse = async ({
   fileContext,
   knowledgeContext,
   config,
+  conversationId,
   onAgentStart,
   onAgentComplete,
   onThinking,
   onStream,
 }) => {
   try {
-    logger.info(`[orchestrateTeamResponse] Starting with ${teamAgents.length} agents`);
+    logger.info(`[orchestrateTeamResponse] Starting with ${teamAgents.length} agents, conversationId: ${conversationId}`);
 
     const apiKey = config?.endpoints?.anthropic?.apiKey || process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
@@ -695,6 +1580,31 @@ const orchestrateTeamResponse = async ({
 
     const lead = teamAgents.find((a) => parseInt(a.tier) === 3) || teamAgents[0];
     const specialists = teamAgents.filter((a) => parseInt(a.tier) !== 3 && parseInt(a.tier) !== 5);
+
+    // Check for pending orchestration state (resuming after user answered a question)
+    const pendingState = conversationId ? getOrchestrationState(conversationId) : null;
+
+    if (pendingState) {
+      logger.info(
+        `[orchestrateTeamResponse] Found pending state - resuming from specialist ${pendingState.stoppedAtSpecialistIndex + 1}`,
+      );
+
+      // Resume orchestration with the user's answer
+      return await resumeOrchestration({
+        pendingState,
+        userMessage, // This is the user's answer to the critical question
+        teamAgents,
+        conversationHistory,
+        fileContext,
+        knowledgeContext,
+        config,
+        conversationId,
+        onAgentStart,
+        onAgentComplete,
+        onThinking,
+        onStream,
+      });
+    }
 
     const responses = [];
 
@@ -730,6 +1640,8 @@ const orchestrateTeamResponse = async ({
     logger.info(`[orchestrateTeamResponse] Selected ${selectedSpecialists.length} specialists`);
 
     const specialistInputs = [];
+    let pendingUserQuestion = null;
+    let stoppedAtSpecialistIndex = -1;
 
     // Execute specialists in a collaborative chain - each sees previous contributions
     for (let i = 0; i < selectedSpecialists.length; i++) {
@@ -740,8 +1652,8 @@ const orchestrateTeamResponse = async ({
       const assignment =
         workPlan.assignments?.[idx.toString()] || workPlan.assignments?.[idx] || '';
 
-      // Pass previous contributions and all context to enable collaboration chain
-      const specialistResponse = await executeSpecialist({
+      // Pass previous contributions, all context, and available specialists for collaboration
+      const specialistResult = await executeSpecialist({
         agent: specialist,
         assignment,
         userMessage,
@@ -751,26 +1663,48 @@ const orchestrateTeamResponse = async ({
         conversationHistory,
         fileContext,
         knowledgeContext,
+        availableSpecialists: selectedSpecialists, // Enable tool-based colleague queries
       });
+
+      // Check if specialist has a pending critical question
+      if (specialistResult.pendingQuestion) {
+        logger.info(
+          `[orchestrateTeamResponse] ${specialist.name} has pending CRITICAL question - stopping orchestration`,
+        );
+        pendingUserQuestion = specialistResult.pendingQuestion;
+        stoppedAtSpecialistIndex = i;
+
+        // Add partial response to inputs if any
+        if (specialistResult.response) {
+          specialistInputs.push({
+            name: specialist.name,
+            role: specialist.role,
+            response: specialistResult.response,
+            hasPendingQuestion: true,
+          });
+        }
+
+        break; // Stop the specialist loop
+      }
 
       specialistInputs.push({
         name: specialist.name,
         role: specialist.role,
-        response: specialistResponse,
+        response: specialistResult.response,
       });
 
       responses.push({
         agentId: specialist.agentId,
         agentName: specialist.name,
         agentRole: specialist.role,
-        response: specialistResponse,
+        response: specialistResult.response,
       });
 
       if (onAgentComplete)
         onAgentComplete({
           agentName: specialist.name,
           agentRole: specialist.role,
-          response: specialistResponse,
+          response: specialistResult.response,
         });
 
       logger.info(
@@ -778,7 +1712,85 @@ const orchestrateTeamResponse = async ({
       );
     }
 
-    // PHASE 3: Synthesize with STREAMING
+    // If there's a pending critical question, save state and return question
+    if (pendingUserQuestion) {
+      logger.info(
+        `[orchestrateTeamResponse] Returning pending question to user from ${pendingUserQuestion.agent}`,
+      );
+
+      // Save orchestration state for resumption
+      if (conversationId) {
+        const stateToSave = {
+          workPlan,
+          specialistInputs,
+          responses,
+          selectedSpecialists: selectedSpecialists.map((s) => ({
+            name: s.name,
+            role: s.role,
+            agentId: s.agentId,
+            tier: s.tier,
+            instructions: s.instructions,
+            expertise: s.expertise,
+            responsibilities: s.responsibilities,
+            model: s.model,
+          })),
+          stoppedAtSpecialistIndex,
+          pendingQuestion: pendingUserQuestion,
+          lead: {
+            name: lead.name,
+            role: lead.role,
+            agentId: lead.agentId,
+            tier: lead.tier,
+            instructions: lead.instructions,
+          },
+          originalUserMessage: userMessage,
+        };
+        saveOrchestrationState(conversationId, stateToSave);
+      }
+
+      // Format the question for display
+      const optionsArray = Array.isArray(pendingUserQuestion.options) ? pendingUserQuestion.options : [];
+      const optionsText = optionsArray.length > 0
+        ? '\n\n**Options:**\n' +
+          optionsArray.map((o, i) => `${i + 1}. ${o}`).join('\n')
+        : '';
+
+      const questionMessage = `**${pendingUserQuestion.agent}** (${pendingUserQuestion.agentRole}) needs clarification before proceeding:
+
+---
+
+${pendingUserQuestion.question}${optionsText}
+
+---
+
+_Please respond to continue the analysis._`;
+
+      // Stream the question to the user incrementally
+      if (onStream) {
+        await streamTextIncrementally(questionMessage, onStream);
+      }
+
+      return {
+        success: true,
+        waitingForInput: true,
+        pendingQuestion: pendingUserQuestion,
+        responses,
+        specialistInputs,
+        stoppedAtSpecialistIndex,
+        selectedSpecialists: selectedSpecialists.map((s) => s.name),
+        workPlan,
+        formattedResponse: questionMessage,
+        selectedAgents: [lead, ...selectedSpecialists.slice(0, stoppedAtSpecialistIndex + 1)].map(
+          (a) => ({
+            id: a.agentId,
+            name: a.name,
+            role: a.role,
+          }),
+        ),
+      };
+    }
+
+    // PHASE 3: Synthesize with STREAMING (only if no pending questions)
     if (onAgentStart) onAgentStart({ ...lead, phase: 'synthesis' });
 
     const finalDeliverable = await synthesizeDeliverableStreaming({
@@ -808,6 +1820,7 @@ const orchestrateTeamResponse = async ({
 
     return {
       success: true,
+      waitingForInput: false,
       responses,
       formattedResponse,
       selectedAgents: [lead, ...selectedSpecialists].map((a) => ({
@@ -838,4 +1851,8 @@ module.exports = {
   synthesizeDeliverableStreaming,
   orchestrateTeamResponse,
   shouldUseTeamOrchestration,
+  // State management for resumable orchestrations
+  getOrchestrationState,
+  saveOrchestrationState,
+  clearOrchestrationState,
 };
