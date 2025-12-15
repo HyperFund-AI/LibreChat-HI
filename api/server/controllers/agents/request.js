@@ -114,6 +114,7 @@ async function handleTeamOrchestration(
     const orchestrationResult = await orchestrateTeamResponse({
       userMessage: text,
       teamAgents,
+      conversationId,
       conversationHistory,
       fileContext: '',
       knowledgeContext,

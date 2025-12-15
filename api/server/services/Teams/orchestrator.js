@@ -1,8 +1,13 @@
-const { fixJSONObject } = require('~/server/utils/jsonRepair');
-const { betaZodOutputFormat } = require('@anthropic-ai/sdk/helpers/beta/zod');
+const { betaZodTool } = require('@anthropic-ai/sdk/helpers/beta/zod');
 const { z } = require('zod');
 const { logger } = require('@librechat/data-schemas');
 const Anthropic = require('@anthropic-ai/sdk');
+const {
+  readKnowledgeDocumentTool,
+  createListDocumentsTool,
+  createSearchDocumentsTool,
+} = require('./tools');
+const { runAgentToolLoop, runAgentToolLoopStreaming } = require('./agentRunner');
 
 const ORCHESTRATOR_ANTHROPIC_MODEL = 'claude-sonnet-4-5';
 
@@ -33,7 +38,14 @@ const zLeadAnalysisSchema = z.object({
 /**
  * Phase 1: Lead analyzes objective and creates work plan
  */
-const executeLeadAnalysis = async ({ lead, userMessage, apiKey, teamAgents, onThinking }) => {
+const executeLeadAnalysis = async ({
+  lead,
+  userMessage,
+  apiKey,
+  teamAgents,
+  onThinking,
+  conversationId,
+}) => {
   const specialistList = teamAgents
     .filter((a) => parseInt(a.tier) !== 3)
     .map(
@@ -64,40 +76,71 @@ IMPORTANT SELECTION REQUIREMENTS:
 - Select specialists whose expertise is genuinely needed for comprehensive analysis
 - Consider different perspectives and areas of expertise
 - Aim for 2-3 specialists minimum, but can select more if the objective requires it
-- Each specialist should have a clear, distinct role in addressing the objective
+- Each specialist should have a clear, distinct role in addressing the objective`;
 
-Respond in JSON format according to schema.`;
+  // Define Tools
+  const submissionTool = {
+    ...betaZodTool({
+      name: 'submit_lead_analysis',
+      description: 'Submit the final analysis and specialist selection plan.',
+      inputSchema: zLeadAnalysisSchema,
+      run: async (args) => args, // Dummy run, intercepted by agentRunner TODO: use the beta toolRunner or whatnot
+    }),
+    usage: 'submit your final analysis and specialist selection.',
+  };
 
-  const client = new Anthropic({ apiKey });
+  const tools = [
+    readKnowledgeDocumentTool,
+    createListDocumentsTool(conversationId),
+    createSearchDocumentsTool(conversationId),
+    submissionTool,
+  ];
 
-  const response = await client.beta.messages.parse({
+  // Run the Agent Loop
+  const { result: finalPlan, messages: leadHistory } = await runAgentToolLoop({
+    apiKey,
     model: ORCHESTRATOR_ANTHROPIC_MODEL,
-    max_tokens: 1000,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: `Objective: ${userMessage}` }],
-    output_format: betaZodOutputFormat(zLeadAnalysisSchema),
+    systemPrompt,
+    messages: [{ role: 'user', content: `Objective: ${userMessage} ` }],
+    tools,
+    submissionToolName: 'submit_lead_analysis',
+    agentName: lead.name,
+    onThinking,
+    toolChoice: 'any',
   });
 
-  const responseText = response.content[0]?.text || '';
-
-  try {
-    const jsonMatch = fixJSONObject(responseText);
-    if (jsonMatch) {
-      const jsonMatch = responseText.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
-      const jsonText = jsonMatch ? jsonMatch[1] : responseText;
-      const plan = JSON.parse(fixJSONObject(jsonText)); // zLeadAnalysisSchema.parse();
-      console.log('Parsed ', plan);
-      if (onThinking) {
-        onThinking({
-          agent: lead.name,
-          action: 'planned',
-          message: `Selected ${plan.selectedSpecialists?.length || 0} specialists for this task`,
-        });
+  // Extract collected context from history
+  let sharedContext = '';
+  if (leadHistory && leadHistory.length > 0) {
+    const docResults = [];
+    for (const msg of leadHistory) {
+      if (msg.role === 'user' && Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (block.type === 'tool_result' && typeof block.content === 'string') {
+            if (
+              block.content.startsWith('### Document:') ||
+              block.content.startsWith('### Search Results')
+            ) {
+              docResults.push(block.content);
+            }
+          }
+        }
       }
-      return plan;
     }
-  } catch (e) {
-    logger.warn('[executeLeadAnalysis] Could not parse JSON');
+    if (docResults.length > 0) {
+      sharedContext = docResults.join('\n\n');
+    }
+  }
+
+  if (finalPlan) {
+    if (onThinking) {
+      onThinking({
+        agent: lead.name,
+        action: 'planned',
+        message: `Selected ${finalPlan.selectedSpecialists?.length || 0} specialists based on analysis`,
+      });
+    }
+    return { ...finalPlan, sharedContext };
   }
 
   // Fallback: Select at least 2-3 specialists if parsing failed
@@ -108,17 +151,26 @@ Respond in JSON format according to schema.`;
   const selectedIndices = allIndices.slice(0, minSpecialists);
 
   return {
-    analysis: responseText,
+    analysis: 'Analysis loop completed without structured output.',
     selectedSpecialists: selectedIndices,
     assignments: {},
-    deliverableOutline: 'Comprehensive analysis',
+    deliverableOutline: 'Comprehensive analysis (Fallback)',
+    sharedContext: '',
   };
 };
 
 /**
  * Phase 2: Execute selected specialists with visible progress and streaming thinking
  */
-const executeSpecialist = async ({ agent, assignment, userMessage, apiKey, onThinking }) => {
+const executeSpecialist = async ({
+  agent,
+  assignment,
+  userMessage,
+  sharedContext,
+  apiKey,
+  onThinking,
+  conversationId,
+}) => {
   logger.info(
     `[executeSpecialist] Called for ${agent.name}, onThinking callback: ${onThinking ? 'present' : 'MISSING'}`,
   );
@@ -157,53 +209,54 @@ Guidelines:
 - Keep output focused (200-300 words)
 - Provide expert insights`;
 
-  const client = new Anthropic({ apiKey });
-
   let accumulatedText = '';
   let thinkingText = '';
   let outputText = '';
   let lastThinkingSent = '';
   let chunkCount = 0;
 
-  // Use streaming to get real-time thinking process
-  const stream = client.messages.stream({
+  // Construct user content with shared context if available
+  let userContent = `Objective: ${userMessage}\n\nYour Assignment: ${assignment || 'Provide your specialist analysis.'}`;
+  if (sharedContext) {
+    userContent += `\n\n# Shared Context (Documents Loaded by Lead)\n\n${sharedContext}`;
+  }
+
+  // Define Tools
+  const tools = [
+    readKnowledgeDocumentTool,
+    createListDocumentsTool(conversationId),
+    createSearchDocumentsTool(conversationId),
+  ];
+
+  logger.info(`[executeSpecialist] Starting streaming loop for ${agent.name}`);
+
+  // Using streaming loop to allow tools + tokens
+  const { result: rawResult } = await runAgentToolLoopStreaming({
+    apiKey,
     model: agent.model || ORCHESTRATOR_ANTHROPIC_MODEL,
-    max_tokens: 2000,
-    system: systemPrompt,
-    messages: [
-      {
-        role: 'user',
-        content: `Objective: ${userMessage}\n\nYour Assignment: ${assignment || 'Provide your specialist analysis.'}`,
-      },
-    ],
-  });
-
-  logger.info(`[executeSpecialist] Starting stream for ${agent.name}`);
-
-  // Stream each chunk and extract thinking in real-time
-  for await (const event of stream) {
-    if (event.type === 'content_block_delta' && event.delta?.text) {
-      const chunk = event.delta.text;
+    systemPrompt,
+    messages: [{ role: 'user', content: userContent }],
+    tools,
+    agentName: agent.name,
+    onThinking,
+    // Provide an onStream handler to capture token deltas
+    onStream: (chunk) => {
       accumulatedText += chunk;
       chunkCount++;
 
-      // Log every 10 chunks to show progress
-      if (chunkCount % 10 === 0) {
-        logger.info(
-          `[executeSpecialist] ${agent.name} received ${chunkCount} chunks, ${accumulatedText.length} chars total`,
-        );
+      // Log occasionally
+      if (chunkCount % 20 === 0) {
+        logger.debug(`[executeSpecialist] ${agent.name} stream chunk ${chunkCount}`);
       }
 
       // Try to extract thinking section as it streams
       const thinkingMatch = accumulatedText.match(/<THINKING>([\s\S]*?)(?:<\/THINKING>|$)/i);
       if (thinkingMatch && thinkingMatch[1]) {
         const currentThinking = thinkingMatch[1].trim();
-
-        // Send updates every few chunks or when thinking content grows significantly
-        if (currentThinking.length > lastThinkingSent.length + 50 || chunkCount % 5 === 0) {
+        // Update UI if we have new thinking content of significance
+        if (currentThinking.length > lastThinkingSent.length + 50 || chunkCount % 10 === 0) {
           thinkingText = currentThinking;
           lastThinkingSent = currentThinking;
-
           if (onThinking) {
             logger.info(
               `[executeSpecialist] Sending thinking update for ${agent.name}: ${currentThinking.length} chars`,
@@ -219,12 +272,16 @@ Guidelines:
           }
         }
       }
-    }
-  }
+    },
+    toolChoice: 'auto',
+  });
 
-  // Final extraction
-  const finalThinkingMatch = accumulatedText.match(/<THINKING>([\s\S]*?)<\/THINKING>/i);
-  const finalOutputMatch = accumulatedText.match(/<OUTPUT>([\s\S]*?)<\/OUTPUT>/i);
+  // Final text is in the result (or fallback to accumulated)
+  const finalFullText = rawResult || accumulatedText;
+
+  // Final extraction of THINKING vs OUTPUT
+  const finalThinkingMatch = finalFullText.match(/<THINKING>([\s\S]*?)<\/THINKING>/i);
+  const finalOutputMatch = finalFullText.match(/<OUTPUT>([\s\S]*?)<\/OUTPUT>/i);
 
   if (finalThinkingMatch) {
     thinkingText = finalThinkingMatch[1].trim();
@@ -242,13 +299,11 @@ Guidelines:
 
   // If no tags found, try to use the whole response as output
   if (!outputText && !thinkingText) {
-    logger.warn(
-      `[executeSpecialist] No THINKING/OUTPUT tags found for ${agent.name}, using raw response`,
-    );
-    outputText = accumulatedText;
+    logger.warn(`[executeSpecialist] No tags found for ${agent.name}, using raw text`);
+    outputText = finalFullText;
   } else if (!outputText) {
     // If we have thinking but no output, the output might come after thinking without tags
-    const afterThinking = accumulatedText.replace(/<THINKING>[\s\S]*?<\/THINKING>/i, '').trim();
+    const afterThinking = finalFullText.replace(/<THINKING>[\s\S]*?<\/THINKING>/i, '').trim();
     if (afterThinking) {
       outputText = afterThinking;
     }
@@ -394,6 +449,7 @@ const orchestrateTeamResponse = async ({
   fileContext,
   knowledgeContext,
   config,
+  conversationId,
   onAgentStart,
   onAgentComplete,
   onThinking,
@@ -428,6 +484,7 @@ const orchestrateTeamResponse = async ({
       apiKey,
       teamAgents,
       onThinking,
+      conversationId,
     });
 
     if (onAgentComplete)
@@ -455,9 +512,10 @@ const orchestrateTeamResponse = async ({
       const specialistResponse = await executeSpecialist({
         agent: specialist,
         assignment,
-        userMessage,
+        userMessage: enrichedMessage,
         apiKey,
         onThinking,
+        sharedContext: workPlan.sharedContext,
       });
 
       specialistInputs.push({
@@ -486,7 +544,7 @@ const orchestrateTeamResponse = async ({
 
     const finalDeliverable = await synthesizeDeliverableStreaming({
       lead,
-      userMessage,
+      userMessage: enrichedMessage,
       specialistInputs,
       deliverableOutline: workPlan.deliverableOutline,
       apiKey,
