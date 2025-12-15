@@ -238,9 +238,11 @@ router.post('/:conversationId/knowledge', async (req, res) => {
         .replace(/[^a-z0-9_-]/g, '')
         .slice(0, 64) || 'document';
 
+    const { getArtifactDedupeKey } = require('~/server/utils/artifactUtils');
+
     const baseDedupeKey = req.body?.dedupeKey
       ? String(req.body.dedupeKey)
-      : `${conversationId}:${String(messageId || '')}:${normalizedTitle}`;
+      : getArtifactDedupeKey({ conversationId, title });
 
     const dedupeHash = crypto.createHash('sha256').update(baseDedupeKey).digest('hex').slice(0, 16);
     const documentId = `kb_${conversationId}_${dedupeHash}`;

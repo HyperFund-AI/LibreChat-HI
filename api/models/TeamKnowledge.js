@@ -96,6 +96,7 @@ const saveToKnowledge = async ({
   createdBy,
   tags = [],
   metadata = {},
+  onlyUpdate = false,
 }) => {
   try {
     // TODO documentId is better but how to keep it stable?
@@ -123,7 +124,14 @@ const saveToKnowledge = async ({
       },
     };
 
-    const doc = await TeamKnowledge.findOneAndUpdate(filter, update, { upsert: true, new: true });
+    const doc = await TeamKnowledge.findOneAndUpdate(filter, update, {
+      upsert: !onlyUpdate,
+      new: true,
+    });
+
+    if (!doc && onlyUpdate) {
+      return null;
+    }
 
     logger.info(
       `[TeamKnowledge] Saved document "${title}" to knowledge base for conversation ${conversationId}`,
