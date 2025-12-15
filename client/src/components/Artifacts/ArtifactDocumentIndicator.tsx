@@ -123,8 +123,8 @@ function ArtifactDocumentIndicator({ artifact, className }: ArtifactDocumentIndi
   );
 
   const normalizedTitle = useMemo(
-    () => normalizeKeyPart(artifact?.title ?? 'Artifact'),
-    [artifact?.title],
+    () => normalizeKeyPart(artifact?.title ?? localize('com_ui_artifacts')),
+    [artifact?.title, localize],
   );
 
   const kbDedupeKey = useMemo(() => {
@@ -171,7 +171,7 @@ function ArtifactDocumentIndicator({ artifact, className }: ArtifactDocumentIndi
       className={className}
       content={artifact.content ?? ''}
       messageId={artifact.messageId}
-      label={'Artifact' /*localize('com_ui_artifacts')*/}
+      label={localize('com_ui_artifacts')}
       title={artifact.title ?? 'untitled'}
       primaryToggle={{
         onToggle: handleToggleOpen,
@@ -182,7 +182,7 @@ function ArtifactDocumentIndicator({ artifact, className }: ArtifactDocumentIndi
           ? {
               conversationId,
               messageId: artifact.messageId,
-              title: artifact.title ?? 'Artifact',
+              title: artifact.title ?? localize('com_ui_artifacts'),
               tags: ['artifact'],
               invalidateQueryKey: ['teamKnowledge', conversationId],
               dedupeKey: kbDedupeKey,

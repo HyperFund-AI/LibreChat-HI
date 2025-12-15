@@ -3,8 +3,10 @@ import VectorStoreSidePanel from './VectorStore/VectorStoreSidePanel';
 import FilesSectionSelector from './FilesSectionSelector';
 import { Button } from '../ui';
 import { Outlet, useNavigate, useParams } from 'react-router-dom';
+import { useLocalize } from '~/hooks';
 
 export default function VectorStoreView() {
+  const localize = useLocalize();
   const params = useParams();
   const navigate = useNavigate();
   return (
@@ -19,7 +21,7 @@ export default function VectorStoreView() {
             navigate('/d/vector-stores');
           }}
         >
-          Go back
+          {localize('com_ui_go_back')}
         </Button>
       </div>
       <div className="flex max-h-[90vh] w-full flex-row divide-x">

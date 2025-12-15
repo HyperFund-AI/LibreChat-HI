@@ -150,7 +150,7 @@ export default function FileSidePanel() {
   return (
     <div className="w-30">
       <h2 className="m-3 text-lg">
-        <strong>Files</strong>
+        <strong>{localize('com_ui_files')}</strong>
       </h2>
       <div className="m-3 mt-2 flex w-full flex-row justify-between gap-x-2 lg:m-0">
         <div className="flex w-2/3 flex-row">

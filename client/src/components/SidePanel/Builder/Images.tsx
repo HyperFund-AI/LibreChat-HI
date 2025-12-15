@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import * as Popover from '@radix-ui/react-popover';
+import { useLocalize } from '~/hooks';
 
 export function NoImage() {
   return (
@@ -86,6 +87,7 @@ export function AvatarMenu({
 }: {
   handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
 }) {
+  const localize = useLocalize();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const onItemClick = () => {
@@ -108,7 +110,7 @@ export function AvatarMenu({
           data-orientation="vertical"
           onClick={onItemClick}
         >
-          Upload Photo
+          {localize('com_ui_upload_photo')}
         </div>
         {/* <Popover.Close
           role="menuitem"

@@ -6,6 +6,28 @@ const Anthropic = require('@anthropic-ai/sdk');
 
 const ORCHESTRATOR_ANTHROPIC_MODEL = 'claude-sonnet-4-5';
 
+/**
+ * Helper to safely extract text content from a message
+ * Handles both string content and array of content blocks
+ */
+const getMessageText = (content) => {
+  if (!content) return '';
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    // Handle array of content blocks (e.g., [{type: 'text', text: '...'}])
+    return content
+      .map((block) => {
+        if (typeof block === 'string') return block;
+        if (block?.text) return block.text;
+        if (block?.content) return getMessageText(block.content);
+        return '';
+      })
+      .join('\n');
+  }
+  if (typeof content === 'object' && content.text) return content.text;
+  return String(content);
+};
+
 const zLeadAnalysisSchema = z.object({
   analysis: z.string().describe('Brief analysis of what the objective requires (1-2 sentences)'),
   selectedSpecialists: z
@@ -33,7 +55,16 @@ const zLeadAnalysisSchema = z.object({
 /**
  * Phase 1: Lead analyzes objective and creates work plan
  */
-const executeLeadAnalysis = async ({ lead, userMessage, apiKey, teamAgents, onThinking }) => {
+const executeLeadAnalysis = async ({
+  lead,
+  userMessage,
+  apiKey,
+  teamAgents,
+  onThinking,
+  conversationHistory = [],
+  fileContext = '',
+  knowledgeContext = '',
+}) => {
   const specialistList = teamAgents
     .filter((a) => parseInt(a.tier) !== 3)
     .map(
@@ -48,6 +79,29 @@ const executeLeadAnalysis = async ({ lead, userMessage, apiKey, teamAgents, onTh
       action: 'analyzing',
       message: `Analyzing objective and identifying required expertise...`,
     });
+  }
+
+  // Build conversation history context for lead
+  let conversationContext = '';
+  if (conversationHistory && conversationHistory.length > 0) {
+    const recentHistory = conversationHistory.slice(-10); // Last 10 messages for context
+    const historyText = recentHistory
+      .map((msg) => {
+        const text = getMessageText(msg.content);
+        const truncated = text.substring(0, 500);
+        return `**${msg.role === 'user' ? 'User' : 'Assistant'}**: ${truncated}${text.length > 500 ? '...' : ''}`;
+      })
+      .join('\n\n');
+    conversationContext = `\n\nConversation History:\n${historyText}`;
+  }
+
+  // Build file/knowledge context
+  let additionalContext = '';
+  if (fileContext && fileContext.trim()) {
+    additionalContext += `\n\nAttached Files Context:\n${fileContext}`;
+  }
+  if (knowledgeContext && knowledgeContext.trim()) {
+    additionalContext += `\n\nKnowledge Base Context:\n${knowledgeContext}`;
   }
 
   const systemPrompt = `You are ${lead.name}, ${lead.role}.
@@ -65,16 +119,20 @@ IMPORTANT SELECTION REQUIREMENTS:
 - Consider different perspectives and areas of expertise
 - Aim for 2-3 specialists minimum, but can select more if the objective requires it
 - Each specialist should have a clear, distinct role in addressing the objective
+- Consider conversation history and any attached files/knowledge base context when making assignments
 
 Respond in JSON format according to schema.`;
 
   const client = new Anthropic({ apiKey });
 
+  // Build full user message with all context
+  const fullUserMessage = `Objective: ${userMessage}${additionalContext}${conversationContext}`;
+
   const response = await client.beta.messages.parse({
     model: ORCHESTRATOR_ANTHROPIC_MODEL,
     max_tokens: 1000,
     system: systemPrompt,
-    messages: [{ role: 'user', content: `Objective: ${userMessage}` }],
+    messages: [{ role: 'user', content: fullUserMessage }],
     output_format: betaZodOutputFormat(zLeadAnalysisSchema),
   });
 
@@ -117,10 +175,21 @@ Respond in JSON format according to schema.`;
 
 /**
  * Phase 2: Execute selected specialists with visible progress and streaming thinking
+ * Now supports collaborative chain - each specialist sees previous contributions
  */
-const executeSpecialist = async ({ agent, assignment, userMessage, apiKey, onThinking }) => {
+const executeSpecialist = async ({
+  agent,
+  assignment,
+  userMessage,
+  apiKey,
+  onThinking,
+  previousContributions = [],
+  conversationHistory = [],
+  fileContext = '',
+  knowledgeContext = '',
+}) => {
   logger.info(
-    `[executeSpecialist] Called for ${agent.name}, onThinking callback: ${onThinking ? 'present' : 'MISSING'}`,
+    `[executeSpecialist] Called for ${agent.name}, onThinking callback: ${onThinking ? 'present' : 'MISSING'}, previous contributions: ${previousContributions.length}`,
   );
 
   if (onThinking) {
@@ -132,6 +201,75 @@ const executeSpecialist = async ({ agent, assignment, userMessage, apiKey, onThi
     });
   }
 
+  // Build context from previous specialists' contributions
+  let collaborationContext = '';
+  if (previousContributions.length > 0) {
+    const contributionsSummary = previousContributions
+      .map((c) => `### ${c.name} (${c.role})\n${c.response}`)
+      .join('\n\n---\n\n');
+    collaborationContext = `
+## Previous Team Contributions
+The following specialists have already contributed their analysis. Review their work and build upon it - avoid repeating what they've covered, identify gaps, add your unique perspective, and connect your insights to theirs where relevant.
+
+${contributionsSummary}
+
+---
+`;
+  }
+
+  // Build conversation history context
+  let conversationContext = '';
+  if (conversationHistory && conversationHistory.length > 0) {
+    const recentHistory = conversationHistory.slice(-10); // Last 10 messages for context
+    const historyText = recentHistory
+      .map((msg) => {
+        const text = getMessageText(msg.content);
+        const truncated = text.substring(0, 500);
+        return `**${msg.role === 'user' ? 'User' : 'Assistant'}**: ${truncated}${text.length > 500 ? '...' : ''}`;
+      })
+      .join('\n\n');
+    conversationContext = `
+## Conversation History
+The following is the recent conversation context:
+
+${historyText}
+
+---
+`;
+  }
+
+  // Build file/knowledge context
+  let additionalContext = '';
+  if (fileContext && fileContext.trim()) {
+    additionalContext += `
+## Attached Files Context
+${fileContext}
+
+---
+`;
+  }
+  if (knowledgeContext && knowledgeContext.trim()) {
+    additionalContext += `
+## Knowledge Base Context
+${knowledgeContext}
+
+---
+`;
+  }
+
+  const collaborationGuidelines =
+    previousContributions.length > 0
+      ? `
+COLLABORATION GUIDELINES:
+- Review the previous contributions carefully before starting
+- Build upon and reference previous insights where relevant
+- Avoid duplicating analysis that's already been done
+- Identify gaps or areas the previous specialists may have missed
+- Offer your unique perspective that complements their work
+- If you disagree with a previous point, explain your reasoning
+- Connect your analysis to the team's emerging picture`
+      : '';
+
   const systemPrompt = `You are ${agent.name}, a ${agent.role}.
 
 ${agent.instructions || ''}
@@ -142,6 +280,7 @@ IMPORTANT: Structure your response in two clear sections:
 
 <THINKING>
 Your step-by-step thinking process here. Show your reasoning, considerations, and approach.
+${previousContributions.length > 0 ? 'Consider what previous specialists have contributed and how your expertise adds to or builds upon their work.' : ''}
 </THINKING>
 
 <OUTPUT>
@@ -151,11 +290,12 @@ Your final expert analysis/output here in Markdown format.
 Guidelines:
 - Put your reasoning process in the THINKING section
 - Put your final deliverable in the OUTPUT section
-- Focus ONLY on your assigned area
+- Focus on your assigned area while being aware of the broader context
 - Be specific and data-driven
 - Use bullet points in the output
 - Keep output focused (200-300 words)
-- Provide expert insights`;
+- Provide expert insights
+${collaborationGuidelines}`;
 
   const client = new Anthropic({ apiKey });
 
@@ -165,6 +305,12 @@ Guidelines:
   let lastThinkingSent = '';
   let chunkCount = 0;
 
+  // Build the user message with all available context
+  const hasContext = previousContributions.length > 0 || conversationContext || additionalContext;
+  const userContent = hasContext
+    ? `# Objective\n${userMessage}\n\n# Your Assignment\n${assignment || 'Provide your specialist analysis.'}\n\n${additionalContext}${conversationContext}${collaborationContext}`
+    : `Objective: ${userMessage}\n\nYour Assignment: ${assignment || 'Provide your specialist analysis.'}`;
+
   // Use streaming to get real-time thinking process
   const stream = client.messages.stream({
     model: agent.model || ORCHESTRATOR_ANTHROPIC_MODEL,
@@ -173,7 +319,7 @@ Guidelines:
     messages: [
       {
         role: 'user',
-        content: `Objective: ${userMessage}\n\nYour Assignment: ${assignment || 'Provide your specialist analysis.'}`,
+        content: userContent,
       },
     ],
   });
@@ -511,27 +657,27 @@ const orchestrateTeamResponse = async ({
       throw new Error('Anthropic API key not configured');
     }
 
-    // Include knowledge context in the message if available
-    let enrichedMessage = userMessage;
-    if (knowledgeContext && knowledgeContext.trim()) {
-      logger.info('[orchestrateTeamResponse] Injecting team knowledge context');
-      enrichedMessage = `${userMessage}\n\n${knowledgeContext}`;
-    }
-
     const lead = teamAgents.find((a) => parseInt(a.tier) === 3) || teamAgents[0];
     const specialists = teamAgents.filter((a) => parseInt(a.tier) !== 3 && parseInt(a.tier) !== 5);
 
     const responses = [];
 
-    // PHASE 1: Lead Analysis
+    // PHASE 1: Lead Analysis (with all context)
     if (onAgentStart) onAgentStart(lead);
+
+    logger.info(
+      `[orchestrateTeamResponse] Passing context to agents - conversation: ${conversationHistory?.length || 0} messages, fileContext: ${fileContext ? 'yes' : 'no'}, knowledgeContext: ${knowledgeContext ? 'yes' : 'no'}`,
+    );
 
     const workPlan = await executeLeadAnalysis({
       lead,
-      userMessage: enrichedMessage,
+      userMessage,
       apiKey,
       teamAgents,
       onThinking,
+      conversationHistory,
+      fileContext,
+      knowledgeContext,
     });
 
     if (onAgentComplete)
@@ -549,19 +695,26 @@ const orchestrateTeamResponse = async ({
 
     const specialistInputs = [];
 
-    for (const specialist of selectedSpecialists) {
+    // Execute specialists in a collaborative chain - each sees previous contributions
+    for (let i = 0; i < selectedSpecialists.length; i++) {
+      const specialist = selectedSpecialists[i];
       if (onAgentStart) onAgentStart(specialist);
 
       const idx = specialists.indexOf(specialist) + 1;
       const assignment =
         workPlan.assignments?.[idx.toString()] || workPlan.assignments?.[idx] || '';
 
+      // Pass previous contributions and all context to enable collaboration chain
       const specialistResponse = await executeSpecialist({
         agent: specialist,
         assignment,
         userMessage,
         apiKey,
         onThinking,
+        previousContributions: [...specialistInputs], // Clone to avoid mutation issues
+        conversationHistory,
+        fileContext,
+        knowledgeContext,
       });
 
       specialistInputs.push({
@@ -583,6 +736,10 @@ const orchestrateTeamResponse = async ({
           agentRole: specialist.role,
           response: specialistResponse,
         });
+
+      logger.info(
+        `[orchestrateTeamResponse] Specialist ${i + 1}/${selectedSpecialists.length} (${specialist.name}) completed. Chain progress: ${specialistInputs.length} contributions accumulated.`,
+      );
     }
 
     // PHASE 3: Synthesize with STREAMING
