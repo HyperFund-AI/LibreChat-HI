@@ -1,3 +1,4 @@
+/* eslint-disable i18next/no-literal-string */
 import { render, fireEvent } from '@testing-library/react';
 import Button from '../Button';
 
@@ -10,6 +11,8 @@ describe('Button', () => {
           ('');
         }}
       >
+        {}
+        {}
         Regenerate
       </Button>,
     );
@@ -21,6 +24,8 @@ describe('Button', () => {
     const handleClick = jest.fn();
     const { getByText } = render(
       <Button type="continue" onClick={handleClick}>
+        {}
+        {}
         Continue
       </Button>,
     );

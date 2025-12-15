@@ -232,9 +232,9 @@ export default function ActionsInput({
             >
               <option value="label">{localize('com_ui_examples')}</option>
               {/* TODO: make these appear and function correctly */}
-              <option value="0">Weather (JSON)</option>
-              <option value="1">Pet Store (YAML)</option>
-              <option value="2">Blank Template</option>
+              <option value="0">{localize('com_ui_example_weather_json')}</option>
+              <option value="1">{localize('com_ui_example_pet_store_yaml')}</option>
+              <option value="2">{localize('com_ui_example_blank_template')}</option>
             </select>
           </div>
         </div>

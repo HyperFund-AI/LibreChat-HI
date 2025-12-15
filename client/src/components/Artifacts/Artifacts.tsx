@@ -176,7 +176,7 @@ export default function Artifacts() {
         throw new Error('No artifact');
       }
 
-      const title = currentArtifact.title ?? 'Artifact';
+      const title = currentArtifact.title ?? localize('com_ui_artifacts');
       const content = currentArtifact.content ?? '';
       if (!content) {
         throw new Error('No content');

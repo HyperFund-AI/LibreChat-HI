@@ -2,8 +2,10 @@ import React from 'react';
 import VectorStoreSidePanel from './VectorStore/VectorStoreSidePanel';
 import { Outlet, useNavigate, useParams } from 'react-router-dom';
 import { Button } from '../ui';
+import { useLocalize } from '~/hooks';
 
 const FileDashboardView = () => {
+  const localize = useLocalize();
   const params = useParams();
   const navigate = useNavigate();
   return (
@@ -18,7 +20,7 @@ const FileDashboardView = () => {
               navigate('/d');
             }}
           >
-            Go back
+            {localize('com_ui_go_back')}
           </Button>
         )}
       </div>
