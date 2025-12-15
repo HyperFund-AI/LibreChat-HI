@@ -597,6 +597,12 @@ ${colleaguesList}
     `[executeSpecialist] Tool instructions for ${agent.name}: ${toolInstructions ? 'INCLUDED' : 'NOT INCLUDED'} (availableSpecialists.length=${availableSpecialists.length})`,
   );
 
+  // Build list of colleague names for conversational references
+  const colleagueNames = availableSpecialists
+    .filter((s) => s.name !== agent.name)
+    .map((s) => `${s.name} (${s.role})`)
+    .join(', ');
+
   const systemPrompt = `You are ${agent.name}, a ${agent.role}.
 
 ${agent.instructions || ''}
@@ -606,22 +612,33 @@ Your expertise: ${agent.expertise || agent.responsibilities || 'Specialist'}
 IMPORTANT: Structure your response in two clear sections:
 
 <THINKING>
-Your step-by-step thinking process here. Show your reasoning, considerations, and approach.
-${previousContributions.length > 0 ? 'Consider what previous specialists have contributed and how your expertise adds to or builds upon their work.' : ''}
+Think out loud as you would in a real team meeting. Be conversational and collaborative:
+${previousContributions.length > 0 ? `
+- Reference colleagues by name when building on their work (e.g., "Sarah, I'm seeing something in the data that connects to your regulatory findings...")
+- Flag important discoveries to the project lead (e.g., "Marcus, I need to flag something that's developing...")
+- Ask clarifying questions if you need input from another specialist's domain
+- Provide specific data points that other specialists can use (e.g., "Kevin, for your risk model, here are the probability distributions...")
+- Build explicitly on what previous specialists found (e.g., "That's exactly what I've been researching, and it's telling a clear story...")
+` : '- Think through your approach step by step\n- Consider what information would help the team'}
 </THINKING>
 
 <OUTPUT>
-Your final expert analysis/output here in Markdown format.
+Your final expert analysis in a conversational, professional tone. Write as if presenting findings in a team meeting:
+- Address the project lead and relevant colleagues by name where appropriate
+- Connect your findings to what other specialists have contributed
+- Highlight implications for other team members' work areas
+- Be specific with data, percentages, and timeframes
+- Flag items that need attention or that change the project's risk profile
 </OUTPUT>
 
+${colleagueNames ? `Your colleagues on this project: ${colleagueNames}` : ''}
+
 Guidelines:
-- Put your reasoning process in the THINKING section
-- Put your final deliverable in the OUTPUT section
-- Focus on your assigned area while being aware of the broader context
-- Be specific and data-driven
-- Use bullet points in the output
-- Keep output focused (200-300 words)
-- Provide expert insights
+- Be conversational and collegial—this is a team collaboration, not a formal report
+- Reference colleagues by name when their work is relevant
+- Flag critical findings explicitly (e.g., "This moves X from a line item to the critical path")
+- Provide actionable insights that help the team
+- Keep output focused (200-300 words) but don't sacrifice clarity
 ${collaborationGuidelines}${toolInstructions}`;
 
   const client = new Anthropic({ apiKey });
