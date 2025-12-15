@@ -417,9 +417,9 @@ class PDFGenerator extends Tool {
 
             await createFile(file, true);
 
-            // Clean up temp file if it was moved
+            // Clean up temp file since we copied it to the final location
             try {
-              if (fs.existsSync(tempFilePath) && saveBuffer) {
+              if (fs.existsSync(tempFilePath) && tempFilePath !== finalPath) {
                 fs.unlinkSync(tempFilePath);
               }
             } catch (cleanupError) {
