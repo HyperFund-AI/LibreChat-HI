@@ -27,7 +27,8 @@ export default function ArtifactTabs({
   const { data: startupConfig } = useGetStartupConfig();
   const lastIdRef = useRef<string | null>(null);
   const defaultPreviewRef = useRef<SandpackPreviewRef>();
-  const effectivePreviewRef = (previewRef ?? defaultPreviewRef) as React.MutableRefObject<SandpackPreviewRef>;
+  const effectivePreviewRef = (previewRef ??
+    defaultPreviewRef) as React.MutableRefObject<SandpackPreviewRef>;
 
   useEffect(() => {
     if (artifact.id !== lastIdRef.current) {
@@ -41,11 +42,6 @@ export default function ArtifactTabs({
   useAutoScroll({ ref: contentRef, content, isSubmitting });
 
   const { files, fileKey, template, sharedProps } = useArtifactProps({ artifact });
-
-  // Debug logging
-  console.log('[ArtifactTabs] artifact.type:', artifact.type);
-  console.log('[ArtifactTabs] artifact.content length:', artifact.content?.length ?? 0);
-  console.log('[ArtifactTabs] fileKey:', fileKey, 'files keys:', Object.keys(files));
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -68,7 +64,11 @@ export default function ArtifactTabs({
         />
       </Tabs.Content> */}
 
-      <Tabs.Content value="preview" className="h-full w-full flex-grow overflow-auto p-0" tabIndex={-1}>
+      <Tabs.Content
+        value="preview"
+        className="h-full w-full flex-grow overflow-auto p-0"
+        tabIndex={-1}
+      >
         <ArtifactPreview
           files={files}
           fileKey={fileKey}

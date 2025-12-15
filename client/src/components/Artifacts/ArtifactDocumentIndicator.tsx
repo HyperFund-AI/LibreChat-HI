@@ -180,14 +180,14 @@ function ArtifactDocumentIndicator({ artifact, className }: ArtifactDocumentIndi
       saveToKnowledge={
         conversationId
           ? {
-            conversationId,
-            messageId: artifact.messageId,
-            title: artifact.title ?? 'Artifact',
-            tags: ['artifact'],
-            invalidateQueryKey: ['teamKnowledge', conversationId],
-            dedupeKey: kbDedupeKey,
-            isSaved: isKbSaved,
-          }
+              conversationId,
+              messageId: artifact.messageId,
+              title: artifact.title ?? 'Artifact',
+              tags: ['artifact'],
+              invalidateQueryKey: ['teamKnowledge', conversationId],
+              dedupeKey: kbDedupeKey,
+              isSaved: isKbSaved,
+            }
           : undefined
       }
     />

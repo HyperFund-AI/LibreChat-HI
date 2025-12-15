@@ -25,7 +25,7 @@ const AnimatedThinkingEntry = memo(({ agent, thinking }: { agent: string; thinki
     // Track if content is still streaming (growing)
     const currentLength = thinking.length;
     const prevLength = prevLengthRef.current;
-    
+
     if (currentLength > prevLength) {
       setIsStreaming(true);
       // Clear existing timeout
@@ -37,7 +37,7 @@ const AnimatedThinkingEntry = memo(({ agent, thinking }: { agent: string; thinki
         setIsStreaming(false);
       }, 500);
     }
-    
+
     prevLengthRef.current = currentLength;
   }, [thinking, isVisible]);
 
@@ -53,12 +53,12 @@ const AnimatedThinkingEntry = memo(({ agent, thinking }: { agent: string; thinki
     <div
       className={cn(
         'flex flex-col gap-2 transition-all duration-500 ease-out',
-        isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2',
+        isVisible ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0',
       )}
     >
       <div className="flex items-center gap-2">
-        <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 transition-colors duration-200">
+        <div className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
+        <span className="text-xs font-semibold text-gray-600 transition-colors duration-200 dark:text-gray-400">
           {agent}
         </span>
       </div>
@@ -73,7 +73,7 @@ const AnimatedThinkingEntry = memo(({ agent, thinking }: { agent: string; thinki
           <MarkdownLite content={thinking} codeExecution={false} />
         </div>
         {isStreaming && (
-          <span className="inline-block w-0.5 h-4 ml-1 bg-amber-500/70 animate-pulse align-middle" />
+          <span className="ml-1 inline-block h-4 w-0.5 animate-pulse bg-amber-500/70 align-middle" />
         )}
       </div>
     </div>

@@ -151,7 +151,8 @@ const createAgentHandler = async (req, res) => {
 
     res.status(201).json(agent);
   } catch (error) {
-    if (error instanceof z.ZodError) {
+    // Check for ZodError by name (more reliable than instanceof with multiple zod versions)
+    if (error instanceof z.ZodError || error?.name === 'ZodError') {
       logger.error('[/Agents] Validation error', error.errors);
       return res.status(400).json({ error: 'Invalid request data', details: error.errors });
     }
@@ -302,7 +303,8 @@ const updateAgentHandler = async (req, res) => {
 
     return res.json(updatedAgent);
   } catch (error) {
-    if (error instanceof z.ZodError) {
+    // Check for ZodError by name (more reliable than instanceof with multiple zod versions)
+    if (error instanceof z.ZodError || error?.name === 'ZodError') {
       logger.error('[/Agents/:id] Validation error', error.errors);
       return res.status(400).json({ error: 'Invalid request data', details: error.errors });
     }

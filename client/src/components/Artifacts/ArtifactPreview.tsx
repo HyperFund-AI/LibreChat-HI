@@ -24,11 +24,7 @@ import { langSubset } from '~/utils';
  * Markdown preview component - renders markdown directly using react-markdown
  * Much more performant for streaming than Sandpack
  */
-const MarkdownPreview = memo(function MarkdownPreview({
-  content,
-}: {
-  content: string;
-}) {
+const MarkdownPreview = memo(function MarkdownPreview({ content }: { content: string }) {
   const contentRef = useRef<HTMLDivElement>(null);
 
   const rehypePlugins: PluggableList = useMemo(
@@ -47,11 +43,7 @@ const MarkdownPreview = memo(function MarkdownPreview({
   );
 
   const remarkPlugins: PluggableList = useMemo(
-    () => [
-      supersub,
-      remarkGfm,
-      [remarkMath, { singleDollarTextMath: false }],
-    ],
+    () => [supersub, remarkGfm, [remarkMath, { singleDollarTextMath: false }]],
     [],
   );
 
@@ -63,10 +55,7 @@ const MarkdownPreview = memo(function MarkdownPreview({
   }, [content]);
 
   return (
-    <div
-      ref={contentRef}
-      className="h-full w-full overflow-auto bg-white p-6 dark:bg-gray-900"
-    >
+    <div ref={contentRef} className="h-full w-full overflow-auto bg-white p-6 dark:bg-gray-900">
       <article className="prose prose-sm dark:prose-invert max-w-none">
         <ReactMarkdown
           /** @ts-ignore */
@@ -144,13 +133,13 @@ export const ArtifactPreview = memo(function ({
   const isMarkdown = fileKey === 'content.md';
   const isReact = fileKey === 'App.tsx' || fileKey === 'App.jsx';
   const isMermaid = fileKey === 'diagram.mmd';
-  
+
   // Check if content looks like actual HTML (starts with DOCTYPE or html tag)
   const fileContent = files[fileKey];
   const contentStr = typeof fileContent === 'string' ? fileContent : '';
   const looksLikeHtml = contentStr.trim().startsWith('<!') || contentStr.trim().startsWith('<html');
   const isActualHtml = fileKey === 'index.html' && looksLikeHtml;
-  
+
   // Use direct markdown rendering for markdown files, or any content that's not actual code
   const useDirectMarkdown = isMarkdown || (!isActualHtml && !isReact && !isMermaid);
 
@@ -209,7 +198,7 @@ export const ArtifactPreview = memo(function ({
   // For text-based content, render directly with react-markdown (much faster streaming)
   if (useDirectMarkdown) {
     return (
-      <div className="h-full w-full p-0 m-0">
+      <div className="m-0 h-full w-full p-0">
         <MarkdownPreview content={code} />
       </div>
     );
@@ -220,7 +209,7 @@ export const ArtifactPreview = memo(function ({
   }
 
   return (
-    <div className="h-full w-full p-0 m-0">
+    <div className="m-0 h-full w-full p-0">
       <SandpackProvider
         files={{ ...initialFiles, ...sharedFiles }}
         options={options}

@@ -4,7 +4,10 @@ const { Constants, ContentTypes } = require('librechat-data-provider');
 const { getMessages, saveMessage, saveConvo, getConvo, saveToKnowledge } = require('~/models');
 const { getTeamAgents } = require('~/models/Conversation');
 const { orchestrateTeamResponse } = require('~/server/services/Teams');
-const { extractArtifactsWithMetadata, getArtifactDedupeKey } = require('~/server/utils/artifactUtils');
+const {
+  extractArtifactsWithMetadata,
+  getArtifactDedupeKey,
+} = require('~/server/utils/artifactUtils');
 
 /**
  * Team Chat Controller - Handles conversations with team collaboration
@@ -175,14 +178,16 @@ const teamChatController = async (req, res) => {
       const artifacts = extractArtifactsWithMetadata(orchestrationResult.formattedResponse);
 
       if (artifacts.length > 0) {
-        logger.info(`[teamChatController] Found ${artifacts.length} artifacts to save to Knowledge`);
+        logger.info(
+          `[teamChatController] Found ${artifacts.length} artifacts to save to Knowledge`,
+        );
 
         for (const artifact of artifacts) {
           try {
             const dedupeKey = getArtifactDedupeKey({
               conversationId,
               title: artifact.title,
-              identifier: artifact.identifier
+              identifier: artifact.identifier,
             });
 
             await saveToKnowledge({
@@ -196,7 +201,7 @@ const teamChatController = async (req, res) => {
               metadata: {
                 savedAt: new Date().toISOString(),
                 identifier: artifact.identifier,
-                type: artifact.type
+                type: artifact.type,
               },
               onlyUpdate: true,
             });

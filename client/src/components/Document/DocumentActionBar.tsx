@@ -350,14 +350,14 @@ function DocumentActionBar({
       className={cn(
         'relative mt-3 flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary p-2',
         primaryToggle?.onToggle &&
-        primaryToggle.isOpen &&
-        cn(
-          'border-border-medium',
-          'shadow-sm',
-          'ring-border-medium/40 ring-1 ring-inset',
-          'before:pointer-events-none before:absolute before:inset-0 before:rounded-lg',
-          "before:bg-surface-hover before:opacity-50 before:content-['']",
-        ),
+          primaryToggle.isOpen &&
+          cn(
+            'border-border-medium',
+            'shadow-sm',
+            'ring-border-medium/40 ring-1 ring-inset',
+            'before:pointer-events-none before:absolute before:inset-0 before:rounded-lg',
+            "before:bg-surface-hover before:opacity-50 before:content-['']",
+          ),
         className,
       )}
     >

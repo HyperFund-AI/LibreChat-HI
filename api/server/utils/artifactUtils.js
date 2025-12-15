@@ -1,4 +1,8 @@
-const { ARTIFACT_START, ARTIFACT_END, findAllArtifacts } = require('~/server/services/Artifacts/update');
+const {
+  ARTIFACT_START,
+  ARTIFACT_END,
+  findAllArtifacts,
+} = require('~/server/services/Artifacts/update');
 
 /**
  * Generates a stable deduplication key for knowledgebase artifacts.
@@ -18,24 +22,24 @@ const { ARTIFACT_START, ARTIFACT_END, findAllArtifacts } = require('~/server/ser
  * @returns {string} The deduplication key
  */
 const getArtifactDedupeKey = ({ conversationId, title, identifier }) => {
-    let stableId = '';
+  let stableId = '';
 
-    if (identifier) {
-        stableId = identifier.trim();
-    } else if (title) {
-        stableId = String(title)
-            .trim()
-            .toLowerCase()
-            .replace(/\s+/g, '_')
-            .replace(/[^a-z0-9_-]/g, '')
-            .slice(0, 64);
-    }
+  if (identifier) {
+    stableId = identifier.trim();
+  } else if (title) {
+    stableId = String(title)
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-z0-9_-]/g, '')
+      .slice(0, 64);
+  }
 
-    if (!stableId) {
-        stableId = 'default-artifact';
-    }
+  if (!stableId) {
+    stableId = 'default-artifact';
+  }
 
-    return `${conversationId}:${stableId}`;
+  return `${conversationId}:${stableId}`;
 };
 
 /**
@@ -43,13 +47,13 @@ const getArtifactDedupeKey = ({ conversationId, title, identifier }) => {
  * e.g. :::artifact{identifier="foo" type="text" title="Bar"}
  */
 const parseArtifactMetadata = (text) => {
-    const metadata = {};
-    const metaRegex = /(\w+)="([^"]*)"/g;
-    let match;
-    while ((match = metaRegex.exec(text)) !== null) {
-        metadata[match[1]] = match[2];
-    }
-    return metadata;
+  const metadata = {};
+  const metaRegex = /(\w+)="([^"]*)"/g;
+  let match;
+  while ((match = metaRegex.exec(text)) !== null) {
+    metadata[match[1]] = match[2];
+  }
+  return metadata;
 };
 
 /**
@@ -63,32 +67,32 @@ const parseArtifactMetadata = (text) => {
  * @returns {Array<{text: string, title?: string, identifier?: string, type?: string, content: string}>}
  */
 const extractArtifactsWithMetadata = (text) => {
-    if (!text) return [];
+  if (!text) return [];
 
-    const rawArtifacts = findAllArtifacts({ text });
-    return rawArtifacts.map((art) => {
-        // art.text is the full artifact block including :::
-        const openTagEnd = art.text.indexOf('}');
-        const openTag = art.text.substring(0, openTagEnd + 1);
-        const metadata = parseArtifactMetadata(openTag);
+  const rawArtifacts = findAllArtifacts({ text });
+  return rawArtifacts.map((art) => {
+    // art.text is the full artifact block including :::
+    const openTagEnd = art.text.indexOf('}');
+    const openTag = art.text.substring(0, openTagEnd + 1);
+    const metadata = parseArtifactMetadata(openTag);
 
-        // Extract content logic similar to `update.js` but we just need the inner text
-        // Assuming standard format: :::artifact{...}\n```\nCONTENT\n```\n:::
-        // We can rely on replaceArtifactContent's logic or just regex for simple extraction
-        // For robust extraction let's look for the code block
-        const contentMatch = art.text.match(/```(?:\w+)?\n([\s\S]*?)\n```/);
-        const content = contentMatch ? contentMatch[1] : '';
+    // Extract content logic similar to `update.js` but we just need the inner text
+    // Assuming standard format: :::artifact{...}\n```\nCONTENT\n```\n:::
+    // We can rely on replaceArtifactContent's logic or just regex for simple extraction
+    // For robust extraction let's look for the code block
+    const contentMatch = art.text.match(/```(?:\w+)?\n([\s\S]*?)\n```/);
+    const content = contentMatch ? contentMatch[1] : '';
 
-        return {
-            fullText: art.text,
-            ...metadata,
-            content,
-        };
-    });
+    return {
+      fullText: art.text,
+      ...metadata,
+      content,
+    };
+  });
 };
 
 module.exports = {
-    getArtifactDedupeKey,
-    extractArtifactsWithMetadata,
-    parseArtifactMetadata,
+  getArtifactDedupeKey,
+  extractArtifactsWithMetadata,
+  parseArtifactMetadata,
 };
