@@ -29,6 +29,7 @@ export type SaveToKnowledgeConfig = {
   /** If omitted, will be taken from route params. */
   conversationId?: string;
   messageId?: string;
+  dedupeKey?: string;
   /** Defaults to extracted title. */
   title?: string;
   /** Defaults to ['team-output'] */

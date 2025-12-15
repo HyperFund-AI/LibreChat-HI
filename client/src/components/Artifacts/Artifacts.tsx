@@ -1,8 +1,11 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
-import { Code, Play, RefreshCw, X } from 'lucide-react';
+import { useParams } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { dataService, type KnowledgeDocument } from 'librechat-data-provider';
+import { BookmarkPlus, CheckCircle, Code, Loader2, Play, RefreshCw, X } from 'lucide-react';
 import { useSetRecoilState, useResetRecoilState } from 'recoil';
-import { Button, Spinner, useMediaQuery, Radio } from '@librechat/client';
+import { Button, Spinner, useMediaQuery, Radio, useToastContext } from '@librechat/client';
 import type { SandpackPreviewRef, CodeEditorRef } from '@codesandbox/sandpack-react';
 import { useShareContext, useMutationState } from '~/Providers';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
@@ -13,6 +16,7 @@ import { CopyCodeButton } from './Code';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
+import { normalizeKeyPart } from '~/common';
 
 const MAX_BLUR_AMOUNT = 32;
 const MAX_BACKDROP_OPACITY = 0.3;
@@ -22,6 +26,9 @@ export default function Artifacts() {
   const { isMutating } = useMutationState();
   const { isSharedConvo } = useShareContext();
   const isMobile = useMediaQuery('(max-width: 868px)');
+  const { conversationId } = useParams<{ conversationId: string }>();
+  const { showToast } = useToastContext();
+  const queryClient = useQueryClient();
   const editorRef = useRef<CodeEditorRef>();
   const previewRef = useRef<SandpackPreviewRef>();
   const [isVisible, setIsVisible] = useState(false);
@@ -86,6 +93,109 @@ export default function Artifacts() {
     orderedArtifactIds,
     setCurrentArtifactId,
   } = useArtifacts();
+
+  /**
+   * Keep sidebar Save-to-KB button in sync with KB:
+   * - dedupe by a stable key (prefer identifier if available, else messageId)
+   * - detect saved/modified state by comparing current content to the stored KB doc
+   */
+  type KnowledgeDocumentWithDedupe = KnowledgeDocument & { dedupeKey?: string };
+  const { data: knowledgeData } = useQuery(
+    ['teamKnowledge', conversationId],
+
+    () => {
+      if (!conversationId) {
+        throw new Error('No conversation ID');
+      }
+      return dataService.getTeamKnowledge(conversationId);
+    },
+    {
+      enabled: !!conversationId,
+      refetchOnWindowFocus: false,
+    },
+  );
+
+  const kbDocuments = useMemo<KnowledgeDocumentWithDedupe[]>(
+    () => (knowledgeData?.documents as KnowledgeDocumentWithDedupe[]) ?? [],
+    [knowledgeData],
+  );
+
+  const normalizedTitle = useMemo(
+    () => normalizeKeyPart(currentArtifact?.title ?? 'artifact'),
+    [currentArtifact?.title],
+  );
+
+  // TODO ...
+  const kbDedupeKey = useMemo(() => {
+    const identifier = String(currentArtifact?.identifier ?? '');
+    const stableIdPart =
+      identifier && identifier !== 'lc-no-identifier'
+        ? identifier
+        : String(currentArtifact?.messageId ?? '');
+    return `artifact:${stableIdPart}:${normalizedTitle}`;
+  }, [currentArtifact?.identifier, currentArtifact?.messageId, normalizedTitle]);
+
+  const existingKbDoc = useMemo(() => {
+    // Prefer direct dedupeKey match (new server field)
+    const byDedupeKey = kbDocuments.find((d) => d?.dedupeKey === kbDedupeKey);
+    if (byDedupeKey) {
+      return byDedupeKey;
+    }
+
+    // Fallback for older docs: match by (messageId + normalized title)
+    const msgId = String(currentArtifact?.messageId ?? '');
+    if (!msgId) {
+      return undefined;
+    }
+    return kbDocuments.find(
+      (d: any) =>
+        String(d?.messageId ?? '') === msgId &&
+        normalizeKeyPart(String(d?.title ?? '')) === normalizedTitle,
+    );
+  }, [kbDocuments, kbDedupeKey, currentArtifact?.messageId, normalizedTitle]);
+
+  const currentKbContent = currentArtifact?.content ?? '';
+  const isKbSaved =
+    Boolean(existingKbDoc) && String(existingKbDoc?.content ?? '') === currentKbContent;
+  const isKbModified = Boolean(existingKbDoc) && !isKbSaved;
+
+  const saveToKnowledgeMutation = useMutation({
+    mutationFn: async () => {
+      if (!conversationId) {
+        throw new Error('No conversation ID');
+      }
+      if (!currentArtifact) {
+        throw new Error('No artifact');
+      }
+
+      const title = currentArtifact.title ?? 'Artifact';
+      const content = currentArtifact.content ?? '';
+      if (!content) {
+        throw new Error('No content');
+      }
+
+      return dataService.saveToTeamKnowledge(conversationId, {
+        title,
+        content,
+        messageId: currentArtifact.messageId ?? '',
+        tags: ['artifact'],
+        dedupeKey: kbDedupeKey,
+      });
+    },
+    onSuccess: () => {
+      showToast({
+        message: 'Document saved to team knowledge base',
+        status: 'success',
+      });
+      queryClient.invalidateQueries({ queryKey: ['teamKnowledge', conversationId] });
+    },
+    onError: (error: Error) => {
+      showToast({
+        message: `Failed to save: ${error.message}`,
+        status: 'error',
+      });
+    },
+  });
 
   const handleDragStart = (e: React.PointerEvent) => {
     setIsDragging(true);
@@ -278,6 +388,39 @@ export default function Artifacts() {
               )}
               <CopyCodeButton content={currentArtifact.content ?? ''} />
               <DownloadArtifact artifact={currentArtifact} />
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => {
+                  if (!conversationId) {
+                    showToast({
+                      message: 'Cannot save: conversation not found',
+                      status: 'error',
+                    });
+                    return;
+                  }
+                  // Prevent duplicate saves:
+                  // - avoid re-saving when KB already matches current content
+                  // - avoid double triggers while mutation is in-flight
+                  if (saveToKnowledgeMutation.isLoading || isKbSaved) {
+                    return;
+                  }
+                  saveToKnowledgeMutation.mutate();
+                }}
+                disabled={!conversationId || saveToKnowledgeMutation.isLoading || isKbSaved}
+                aria-label={
+                  isKbSaved ? localize('com_ui_saved') : localize('com_ui_save_to_knowledge')
+                }
+                title={isKbSaved ? localize('com_ui_saved') : localize('com_ui_save_to_knowledge')}
+              >
+                {saveToKnowledgeMutation.isLoading ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : isKbSaved ? (
+                  <CheckCircle size={16} className="text-green-500" />
+                ) : (
+                  <BookmarkPlus size={16} className={isKbModified ? 'text-amber-500' : undefined} />
+                )}
+              </Button>
               <Button
                 size="icon"
                 variant="ghost"

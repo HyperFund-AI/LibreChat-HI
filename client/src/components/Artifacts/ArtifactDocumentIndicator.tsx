@@ -1,8 +1,10 @@
 import { useEffect, useRef, useCallback, memo } from 'react';
 import debounce from 'lodash/debounce';
 import { useLocation, useParams } from 'react-router-dom';
+import { dataService } from 'librechat-data-provider';
 import { useRecoilState, useSetRecoilState, useResetRecoilState } from 'recoil';
 import type { Artifact } from '~/common';
+import { normalizeKeyPart } from '~/common';
 import { logger, isArtifactRoute } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -103,6 +105,14 @@ function ArtifactDocumentIndicator({ artifact, className }: ArtifactDocumentIndi
     return null;
   }
 
+  // TODO common logic for pane and bar
+  const normalizedTitle = normalizeKeyPart(artifact.title ?? 'Artifact');
+  const identifier = normalizeKeyPart(String(artifact.identifier ?? ''));
+  const source = identifier
+    ? `id:${identifier}`
+    : `msg:${String(messageId ?? artifact.messageId ?? '')}`;
+  const dedupeKey = `artifact:${source}:${normalizedTitle}`;
+
   return (
     <DocumentActionBar
       className={className}
@@ -122,6 +132,7 @@ function ArtifactDocumentIndicator({ artifact, className }: ArtifactDocumentIndi
               title: artifact.title ?? 'Artifact',
               tags: ['artifact'],
               invalidateQueryKey: ['teamKnowledge', conversationId],
+              dedupeKey,
             }
           : undefined
       }

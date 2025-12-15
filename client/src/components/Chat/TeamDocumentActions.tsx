@@ -1,4 +1,5 @@
 import React from 'react';
+import { dataService } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import DocumentActionBar from '~/components/Document/DocumentActionBar';
 
@@ -35,6 +36,15 @@ export default function TeamDocumentActions({
       saveToKnowledge={{
         messageId,
         tags: ['team-output'],
+        // TODO dedupe key? no need since we will get rid of this component in this form
+        onSave: ({ conversationId, title, content, messageId, tags }) =>
+          dataService.saveToTeamKnowledge(conversationId, {
+            title,
+            content,
+            messageId,
+            tags,
+            dedupeKey: `teamdoc:${messageId ?? ''}:${title}`,
+          }),
       }}
     />
   );

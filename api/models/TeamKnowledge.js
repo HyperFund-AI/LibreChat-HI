@@ -1,5 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const mongoose = require('mongoose');
+const { v4: uuidv4 } = require('uuid');
 
 /**
  * Schema for team knowledge base documents
@@ -16,6 +17,11 @@ const teamKnowledgeSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
+    },
+    dedupeKey: {
+      type: String,
+      default: '',
+      index: true,
     },
     title: {
       type: String,
@@ -55,13 +61,23 @@ const teamKnowledgeSchema = new mongoose.Schema(
 // Compound index for efficient queries
 teamKnowledgeSchema.index({ conversationId: 1, createdAt: -1 });
 
+// Dedupe index: only enforced when `dedupeKey` is non-empty
+teamKnowledgeSchema.index(
+  { conversationId: 1, dedupeKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { dedupeKey: { $type: 'string', $ne: '' } },
+  },
+);
+
 const TeamKnowledge = mongoose.model('TeamKnowledge', teamKnowledgeSchema);
 
 /**
  * Saves a document to the team knowledge base
  * @param {Object} params - Document parameters
  * @param {string} params.conversationId - The conversation ID
- * @param {string} params.documentId - Unique document ID
+ * @param {string} params.documentId - Unique document ID (optional if `dedupeKey` is provided)
+ * @param {string} params.dedupeKey - Optional dedupe key to upsert by (e.g. `${messageId}:${filename}`)
  * @param {string} params.title - Document title
  * @param {string} params.content - Document content (markdown)
  * @param {string} params.messageId - Source message ID
@@ -73,6 +89,7 @@ const TeamKnowledge = mongoose.model('TeamKnowledge', teamKnowledgeSchema);
 const saveToKnowledge = async ({
   conversationId,
   documentId,
+  dedupeKey = '',
   title,
   content,
   messageId,
@@ -81,11 +98,17 @@ const saveToKnowledge = async ({
   metadata = {},
 }) => {
   try {
-    const doc = await TeamKnowledge.findOneAndUpdate(
-      { documentId },
-      {
+    // TODO documentId is better but how to keep it stable?
+    const normalizedDedupeKey = typeof dedupeKey === 'string' ? dedupeKey.trim() : '';
+    const resolvedDocumentId = documentId || `kb_${conversationId}_${uuidv4()}`;
+
+    const filter = normalizedDedupeKey
+      ? { conversationId, dedupeKey: normalizedDedupeKey }
+      : { documentId: resolvedDocumentId };
+
+    const update = {
+      $set: {
         conversationId,
-        documentId,
         title,
         content,
         contentType: 'markdown',
@@ -93,9 +116,14 @@ const saveToKnowledge = async ({
         createdBy,
         tags,
         metadata,
+        ...(normalizedDedupeKey ? { dedupeKey: normalizedDedupeKey } : {}),
       },
-      { upsert: true, new: true },
-    );
+      $setOnInsert: {
+        documentId: resolvedDocumentId,
+      },
+    };
+
+    const doc = await TeamKnowledge.findOneAndUpdate(filter, update, { upsert: true, new: true });
 
     logger.info(
       `[TeamKnowledge] Saved document "${title}" to knowledge base for conversation ${conversationId}`,
