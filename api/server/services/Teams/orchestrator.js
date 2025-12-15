@@ -539,26 +539,38 @@ If there is no deliverable ready - for example, more information from the user w
   let fullText = '';
   let finishReason = null;
   let attempts = 0;
-  const maxAttempts = 4;
+  const maxAttempts = 15;
 
   while (attempts < maxAttempts) {
     const isContinuation = attempts > 0;
     let messages = [];
     
     if (isContinuation) {
-      const context = getContinuationContext(fullText, 3000);
       const artifactStart = fullText.indexOf(':::artifact');
-      const introText = artifactStart > 0 ? fullText.substring(0, artifactStart) : '';
-      const continuationText = introText + (context || fullText.substring(Math.max(0, fullText.length - 3000)));
+      const hasArtifactStarted = artifactStart !== -1;
+      
+      let continuationText = fullText;
+      if (hasArtifactStarted) {
+        const context = getContinuationContext(fullText, 3000);
+        const introText = artifactStart > 0 ? fullText.substring(0, artifactStart) : '';
+        const artifactHeader = fullText.substring(artifactStart, fullText.indexOf('\n', artifactStart) + 1);
+        const markdownStart = fullText.indexOf('```markdown', artifactStart);
+        const afterMarkdown = markdownStart !== -1 ? fullText.substring(markdownStart + 12, markdownStart + 12 + 100) : '';
+        continuationText = introText + artifactHeader + (markdownStart !== -1 ? '```markdown\n' : '') + (context || fullText.substring(Math.max(0, fullText.length - 3000)));
+      }
       
       messages.push({
         role: 'assistant',
         content: continuationText,
       });
       
+      const continuationInstruction = hasArtifactStarted
+        ? 'CRITICAL: The artifact has ALREADY STARTED. Do NOT repeat the :::artifact tag or the ```markdown tag. Continue ONLY the document content from where it was cut off. Simply continue writing the markdown content. When finished, close with ``` and ::: tags.'
+        : 'Continue generating from where you left off. Complete the document and make sure to properly close the artifact tag with ::: at the end.';
+      
       messages.push({
         role: 'user',
-        content: 'Continue generating from where you left off. Complete the document and make sure to properly close the artifact tag with ::: at the end.',
+        content: continuationInstruction,
       });
       
       if (onThinking) {
@@ -584,16 +596,40 @@ If there is no deliverable ready - for example, more information from the user w
 
     let currentChunk = '';
     let lastEvent = null;
+    let isFirstChunk = true;
+    let artifactHeaderSkipped = false;
 
     for await (const event of stream) {
       lastEvent = event;
       
       if (event.type === 'content_block_delta' && event.delta?.text) {
-        const chunk = event.delta.text;
-        currentChunk += chunk;
-        fullText += chunk;
-        if (onStream) {
-          onStream(chunk);
+        let chunk = event.delta.text;
+        
+        if (isContinuation && isFirstChunk && !artifactHeaderSkipped) {
+          const artifactStartPattern = /^[\s\n]*:::artifact[^\n]*\n?/;
+          const markdownStartPattern = /^[\s\n]*```markdown[\s\n]*/;
+          
+          if (artifactStartPattern.test(chunk)) {
+            chunk = chunk.replace(artifactStartPattern, '');
+            artifactHeaderSkipped = true;
+            logger.info('[synthesizeDeliverableStreaming] Removed duplicate artifact header from continuation');
+          }
+          
+          if (markdownStartPattern.test(chunk) && fullText.includes('```markdown')) {
+            chunk = chunk.replace(markdownStartPattern, '');
+            artifactHeaderSkipped = true;
+            logger.info('[synthesizeDeliverableStreaming] Removed duplicate markdown tag from continuation');
+          }
+          
+          isFirstChunk = false;
+        }
+        
+        if (chunk) {
+          currentChunk += chunk;
+          fullText += chunk;
+          if (onStream) {
+            onStream(chunk);
+          }
         }
       }
       
