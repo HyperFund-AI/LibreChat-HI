@@ -367,7 +367,6 @@ export default function Artifacts() {
                 <TooltipAnchor
                   description={localize('com_ui_refresh')}
                   side="bottom"
-                  delay={50}
                   render={
                     <Button
                       size="icon"
@@ -407,7 +406,6 @@ export default function Artifacts() {
                   isKbSaved ? localize('com_ui_saved_in_kb') : localize('com_ui_save_to_knowledge')
                 }
                 side="bottom"
-                delay={50}
                 render={
                   <div className="inline-flex cursor-default">
                     <Button
@@ -451,7 +449,6 @@ export default function Artifacts() {
               <TooltipAnchor
                 description={localize('com_ui_close')}
                 side="bottom"
-                delay={50}
                 render={
                   <Button
                     size="icon"

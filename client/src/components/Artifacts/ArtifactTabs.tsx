@@ -19,13 +19,15 @@ export default function ArtifactTabs({
 }: {
   artifact: Artifact;
   editorRef: React.MutableRefObject<CodeEditorRef>;
-  previewRef: React.MutableRefObject<SandpackPreviewRef>;
+  previewRef?: React.MutableRefObject<SandpackPreviewRef>;
   isSharedConvo?: boolean;
 }) {
   const { isSubmitting } = useArtifactsContext();
   const { currentCode, setCurrentCode } = useCodeState();
   const { data: startupConfig } = useGetStartupConfig();
   const lastIdRef = useRef<string | null>(null);
+  const defaultPreviewRef = useRef<SandpackPreviewRef>();
+  const effectivePreviewRef = (previewRef ?? defaultPreviewRef) as React.MutableRefObject<SandpackPreviewRef>;
 
   useEffect(() => {
     if (artifact.id !== lastIdRef.current) {
@@ -65,7 +67,7 @@ export default function ArtifactTabs({
           files={files}
           fileKey={fileKey}
           template={template}
-          previewRef={previewRef}
+          previewRef={effectivePreviewRef}
           sharedProps={sharedProps}
           currentCode={currentCode}
           startupConfig={startupConfig}
