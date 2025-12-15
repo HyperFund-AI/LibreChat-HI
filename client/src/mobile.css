@@ -330,9 +330,39 @@
   @apply flex h-full w-full grow flex-col;
 }
 
+/* Remove padding from preview container */
+.sp-preview-container {
+  padding: 0 !important;
+}
+
+.sp-preview {
+  padding: 0 !important;
+}
+
+.sp-preview-container-no-padding,
+.sp-preview-no-padding {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
 /* Content elements */
 .sp-preview-iframe {
   @apply h-full w-full grow;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+}
+
+/* Remove all padding from Sandpack wrapper elements */
+.sp-wrapper {
+  padding: 0 !important;
+}
+
+/* Ensure iframe has no spacing */
+.sp-preview-iframe iframe {
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
 }
 
 .sp-cm {
@@ -351,7 +381,9 @@
 
 div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-labelledby^="radix-"][id^="radix-"][id$="-content-preview"] {
   scrollbar-gutter: stable !important;
-  background-color: rgba(205, 205, 205, 0.66) !important;
+  background-color: transparent !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
 div[role="tabpanel"][data-state="active"][data-orientation="horizontal"][aria-labelledby^="radix-"][id^="radix-"][id$="-content-preview"]::-webkit-scrollbar {

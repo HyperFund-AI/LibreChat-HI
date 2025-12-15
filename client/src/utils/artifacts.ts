@@ -190,6 +190,16 @@ export const sharedFiles = {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Document</title>
         <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+        <style>
+          body {
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          #root {
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+        </style>
       </head>
       <body>
         <div id="root"></div>

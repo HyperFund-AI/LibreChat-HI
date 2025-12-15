@@ -62,7 +62,7 @@ export default function ArtifactTabs({
         />
       </Tabs.Content>
 
-      <Tabs.Content value="preview" className="h-full w-full flex-grow overflow-auto" tabIndex={-1}>
+      <Tabs.Content value="preview" className="h-full w-full flex-grow overflow-auto p-0" tabIndex={-1}>
         <ArtifactPreview
           files={files}
           fileKey={fileKey}
