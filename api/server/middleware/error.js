@@ -91,9 +91,10 @@ const sendError = async (req, res, options, callback) => {
  */
 const sendResponse = (req, res, data, errorMessage) => {
   // Ensure errorMessage is always a non-empty string if provided
-  const errorText = errorMessage && typeof errorMessage === 'string' && errorMessage.trim()
-    ? errorMessage.trim()
-    : errorMessage || 'An error occurred while processing your request. Please try again.';
+  const errorText =
+    errorMessage && typeof errorMessage === 'string' && errorMessage.trim()
+      ? errorMessage.trim()
+      : errorMessage || 'An error occurred while processing your request. Please try again.';
 
   if (!res.headersSent) {
     if (errorMessage) {

@@ -1,8 +1,43 @@
+const { z } = require('zod');
+const { fixJSONObject } = require('~/server/utils/jsonRepair');
+const { betaZodOutputFormat } = require('@anthropic-ai/sdk/helpers/beta/zod');
 const Anthropic = require('@anthropic-ai/sdk');
 const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { getUserKey } = require('~/server/services/UserService');
-const { DEFAULT_ANTHROPIC_MODEL } = require('./drSterlingAgent');
+const { FAST_ANTRHOPIC_MODEL } = require('./drSterlingAgent');
+
+const zProjectSchema = z.object({
+  projectName: z.string().min(1).describe('Project name (string)'),
+  complexity: z
+    .enum(['LOW', 'MODERATE', 'HIGH', 'VERY_HIGH'])
+    .describe('Project complexity: LOW|MODERATE|HIGH|VERY_HIGH'),
+  teamSize: z.number().min(1).describe('Team size (number, must match members.length)'),
+  members: z
+    .array(
+      z.object({
+        name: z.string().min(1).describe('Full Name'),
+        role: z.string().min(1).describe('Role Title'),
+        tier: z.enum(['3', '4', '5']).describe('Tier: 3|4|5'),
+        expertise: z.string().min(1).describe('Expertise areas'),
+        behavioralLevel: z
+          .enum(['NONE', 'ENTRY-MODERATE', 'MODERATE-EXPERT', 'EXPERT'])
+          .describe('Behavioral level: NONE|ENTRY–MODERATE|MODERATE–EXPERT|EXPERT'),
+        instructions: z
+          .string()
+          .min(1)
+          .describe(
+            'Complete full specification including all sections (Professional Foundation, Expertise Architecture, Operational Parameters, Excellence Framework)',
+          ),
+      }),
+    )
+    .min(1)
+    .describe('Array of team members'),
+});
+//.refine((data) => data.teamSize === data.members.length, {
+//  message: 'teamSize must exactly match members.length',
+//  path: ['teamSize'],
+//});
 
 /**
  * Extracts team composition from all team-related messages using LLM
@@ -14,6 +49,7 @@ const extractTeamCompositionWithLLM = async (teamRelatedMessages, userId) => {
   try {
     logger.info(
       `[extractTeamCompositionWithLLM] Extracting team from ${teamRelatedMessages.length} messages using LLM`,
+      teamRelatedMessages,
     );
 
     // Get Anthropic API key
@@ -53,22 +89,7 @@ Extract the complete team composition including:
 3. Team size
 4. All team members with their complete information
 
-Return a JSON object with this EXACT structure:
-{
-  "projectName": "string",
-  "complexity": "LOW|MODERATE|HIGH|VERY_HIGH",
-  "teamSize": number,
-  "members": [
-    {
-      "name": "Full Name",
-      "role": "Role Title",
-      "tier": "3|4|5",
-      "expertise": "Expertise areas",
-      "behavioralLevel": "NONE|ENTRY–MODERATE|MODERATE–EXPERT|EXPERT",
-      "instructions": "Complete full specification including all sections (Professional Foundation, Expertise Architecture, Operational Parameters, Excellence Framework)"
-    }
-  ]
-}
+Respond in JSON format according to schema.
 
 IMPORTANT:
 - Include ALL team members mentioned in the LATEST messages
@@ -81,12 +102,12 @@ IMPORTANT:
 
 ${truncatedText}
 
-Return ONLY valid JSON, no markdown formatting or explanations.`;
+Respond in JSON format according to schema.`;
 
     const client = new Anthropic({ apiKey: anthropicApiKey });
 
-    const response = await client.messages.create({
-      model: DEFAULT_ANTHROPIC_MODEL,
+    const response = await client.beta.messages.parse({
+      model: FAST_ANTRHOPIC_MODEL,
       max_tokens: 16000,
       temperature: 0.3, // Lower temperature for more consistent extraction
       system: systemPrompt,
@@ -96,6 +117,7 @@ Return ONLY valid JSON, no markdown formatting or explanations.`;
           content: userMessage,
         },
       ],
+      output_format: betaZodOutputFormat(zProjectSchema),
     });
 
     const responseText = response.content[0]?.text || '';
@@ -107,7 +129,7 @@ Return ONLY valid JSON, no markdown formatting or explanations.`;
       // Try to extract JSON from markdown code blocks if present
       const jsonMatch = responseText.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
       const jsonText = jsonMatch ? jsonMatch[1] : responseText;
-      extractedTeam = JSON.parse(jsonText);
+      extractedTeam = JSON.parse(fixJSONObject(jsonText)); // zProjectSchema.parse();
     } catch (parseError) {
       logger.error('[extractTeamCompositionWithLLM] Error parsing JSON response:', parseError);
       logger.debug(

@@ -62,7 +62,6 @@ function useTextToSpeechExternal({
         error.message &&
         error.message.includes('The play() request was interrupted by a call to pause()')
       ) {
-        console.log('Play request was interrupted by a call to pause()');
         initializeAudio();
         return playPromise().catch(console.error);
       }
@@ -74,7 +73,6 @@ function useTextToSpeechExternal({
     });
 
     newAudio.onended = () => {
-      console.log('Cached message audio ended');
       URL.revokeObjectURL(blobUrl);
       setIsSpeaking(false);
     };

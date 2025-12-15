@@ -330,7 +330,9 @@ async function getLocalFileStream(req, filepath) {
 
       // Check if file exists before creating stream
       if (!fs.existsSync(fullPath)) {
-        logger.error(`[getLocalFileStream] File not found: ${fullPath} (from filepath: ${filepath})`);
+        logger.error(
+          `[getLocalFileStream] File not found: ${fullPath} (from filepath: ${filepath})`,
+        );
         throw new Error(`File not found: ${fullPath}`);
       }
 

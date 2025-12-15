@@ -121,16 +121,32 @@ async function handleTeamOrchestration(
 
       // Show "thinking" process - team collaboration
       onThinking: (thinking) => {
+        // Log ALL thinking events for debugging
+        logger.info(`[handleTeamOrchestration] onThinking callback called:`, {
+          agent: thinking.agent,
+          action: thinking.action,
+          hasThinking: !!thinking.thinking,
+          thinkingLength: thinking.thinking?.length || 0,
+          messagePreview: thinking.message?.substring(0, 50),
+        });
+
         // Send as a "step" event to show progress
-        sendEvent(res, {
+        const eventPayload = {
           event: 'on_thinking',
           data: {
             agent: thinking.agent,
             role: thinking.role || '',
             action: thinking.action,
             message: thinking.message,
+            thinking: thinking.thinking || thinking.message, // Include full thinking text if available
           },
-        });
+        };
+
+        logger.info(
+          `[handleTeamOrchestration] Sending event via SSE:`,
+          JSON.stringify(eventPayload).substring(0, 200),
+        );
+        sendEvent(res, eventPayload);
       },
 
       onAgentStart: (agent) => {

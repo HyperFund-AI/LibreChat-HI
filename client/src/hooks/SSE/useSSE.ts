@@ -132,7 +132,6 @@ export default function useSSE(
 
         // If team was created by Dr. Sterling, invalidate conversation to refresh team data
         if (teamCreated && submission.conversation?.conversationId) {
-          console.log('[useSSE] Team created by Dr. Sterling, refreshing conversation data');
           // Invalidate conversation queries to refresh team data
           queryClient.invalidateQueries([
             QueryKeys.conversation,
@@ -160,6 +159,7 @@ export default function useSSE(
             steps: [],
             currentAgent: null,
             phase: 'idle',
+            agentThinking: {},
           });
         }, 3000);
 
@@ -173,7 +173,6 @@ export default function useSSE(
           setIsTeamApprovalLoading(false);
         }
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
-        console.log('final', data);
         return;
       } else if (data.created != null) {
         const runId = v4();
@@ -196,29 +195,50 @@ export default function useSSE(
           const conversationId = submission?.conversation?.conversationId || '';
 
           setTeamCollaboration((prev: TeamCollaborationState) => {
+            const agentName = eventData.agent || eventData.agentName || 'Team';
+            const thinkingText = eventData.thinking || '';
+            const action =
+              eventData.action || (data.event === 'on_agent_start' ? 'working' : 'completed');
+
             // Determine phase based on event
             let phase = prev.phase;
             if (data.event === 'on_thinking') {
-              if (eventData.action === 'analyzing' || eventData.action === 'planned') {
+              if (action === 'analyzing' || action === 'planned') {
                 phase = 'planning';
-              } else if (eventData.action === 'working' || eventData.action === 'completed') {
+              } else if (action === 'working' || action === 'completed' || action === 'thinking') {
                 phase = 'specialist-work';
-              } else if (eventData.action === 'synthesizing') {
+              } else if (action === 'synthesizing') {
                 phase = 'synthesis';
-              } else if (eventData.action === 'complete') {
+              } else if (action === 'complete') {
                 phase = 'complete';
               }
             }
 
+            // Update agent thinking map when we receive thinking content (don't store in steps)
+            const updatedAgentThinking = { ...prev.agentThinking };
+            if (thinkingText && action === 'thinking') {
+              updatedAgentThinking[agentName] = thinkingText;
+
+              // For thinking events, only update agentThinking, don't add to steps
+              return {
+                ...prev,
+                isActive: true,
+                conversationId,
+                currentAgent: agentName,
+                phase,
+                agentThinking: updatedAgentThinking,
+              };
+            }
+
+            // For non-thinking events (working, completed, etc.), add to steps
             const newStep: TeamThinkingStep = {
               id: v4(),
-              agent: eventData.agent || eventData.agentName || 'Team',
+              agent: agentName,
               role: eventData.role || eventData.agentRole || '',
-              action:
-                eventData.action || (data.event === 'on_agent_start' ? 'working' : 'completed'),
+              action,
               message:
                 eventData.message ||
-                `${eventData.agentName || 'Agent'} ${data.event === 'on_agent_start' ? 'started working' : 'finished'}`,
+                `${agentName} ${data.event === 'on_agent_start' ? 'started working' : 'finished'}`,
               timestamp: Date.now(),
             };
 
@@ -226,8 +246,9 @@ export default function useSSE(
               isActive: true,
               conversationId,
               steps: [...prev.steps, newStep],
-              currentAgent: eventData.agent || eventData.agentName || null,
+              currentAgent: agentName,
               phase,
+              agentThinking: updatedAgentThinking,
             };
           });
         } else {
@@ -244,6 +265,7 @@ export default function useSSE(
           steps: [],
           currentAgent: null,
           phase: 'idle',
+          agentThinking: {},
         });
 
         /* synchronize messages to Assistants API as well as with real DB ID's */
@@ -273,7 +295,6 @@ export default function useSSE(
 
     sse.addEventListener('open', () => {
       setAbortScroll(false);
-      console.log('connection is opened');
     });
 
     sse.addEventListener('cancel', async () => {

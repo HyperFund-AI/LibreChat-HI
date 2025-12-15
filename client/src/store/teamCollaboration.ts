@@ -4,8 +4,16 @@ export interface TeamThinkingStep {
   id: string;
   agent: string;
   role?: string;
-  action: 'analyzing' | 'planned' | 'working' | 'completed' | 'synthesizing' | 'complete';
+  action:
+    | 'analyzing'
+    | 'planned'
+    | 'working'
+    | 'completed'
+    | 'synthesizing'
+    | 'complete'
+    | 'thinking';
   message: string;
+  thinking?: string; // Full thinking process in Markdown format
   timestamp: number;
 }
 
@@ -15,6 +23,7 @@ export interface TeamCollaborationState {
   steps: TeamThinkingStep[];
   currentAgent: string | null;
   phase: 'idle' | 'planning' | 'specialist-work' | 'synthesis' | 'complete';
+  agentThinking: Record<string, string>; // Map of agent name -> current thinking process (Markdown)
 }
 
 const defaultState: TeamCollaborationState = {
@@ -23,6 +32,7 @@ const defaultState: TeamCollaborationState = {
   steps: [],
   currentAgent: null,
   phase: 'idle',
+  agentThinking: {},
 };
 
 export const teamCollaborationAtom = atom<TeamCollaborationState>({
