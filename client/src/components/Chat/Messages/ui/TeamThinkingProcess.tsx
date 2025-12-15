@@ -4,6 +4,7 @@ import { Brain, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { teamCollaborationAtom } from '~/store/teamCollaboration';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import { cn } from '~/utils';
+import { useLocalize } from '~/hooks';
 
 type TeamThinkingProcessProps = {
   isSubmitting?: boolean;
@@ -83,6 +84,7 @@ const AnimatedThinkingEntry = memo(({ agent, thinking }: { agent: string; thinki
 AnimatedThinkingEntry.displayName = 'AnimatedThinkingEntry';
 
 const TeamThinkingProcess = memo(({ isSubmitting }: TeamThinkingProcessProps) => {
+  const localize = useLocalize();
   const collaboration = useRecoilValue(teamCollaborationAtom);
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -120,7 +122,7 @@ const TeamThinkingProcess = memo(({ isSubmitting }: TeamThinkingProcessProps) =>
         <div className="flex items-center gap-2">
           <Brain className="h-4 w-4 text-amber-500" />
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            Team Thinking Process
+            {localize('com_ui_team_thinking_process')}
           </span>
           <Loader2 className="h-3 w-3 animate-spin text-amber-500" />
         </div>

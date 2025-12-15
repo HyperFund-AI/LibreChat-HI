@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, DotsIcon, TrashIcon } from '@librechat/client';
 import { TVectorStore } from '~/common';
+import { useLocalize } from '~/hooks';
 
 type VectorStoreListItemProps = {
   vectorStore: TVectorStore;
@@ -12,6 +13,7 @@ export default function VectorStoreListItem({
   vectorStore,
   deleteVectorStore,
 }: VectorStoreListItemProps) {
+  const localize = useLocalize();
   const navigate = useNavigate();
   return (
     <div
@@ -26,7 +28,10 @@ export default function VectorStoreListItem({
       </div>
       <div className="w-2/6 text-gray-500">
         <p>
-          {vectorStore.file_counts.total} Files ({vectorStore.bytes / 1000}KB)
+          {localize('com_ui_files_count_kb', {
+            0: vectorStore.file_counts.total,
+            1: Math.round(vectorStore.bytes / 1000),
+          })}
         </p>
         <p className="text-sm">{vectorStore.created_at.toString()}</p>
       </div>

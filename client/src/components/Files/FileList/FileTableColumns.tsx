@@ -53,7 +53,7 @@ export const fileTableColumns: ColumnDef<TFile>[] = [
       size: '150px',
     },
     accessorKey: 'filename',
-    header: ({ column }) => {
+    header: () => {
       const localize = useLocalize();
       return <>{localize('com_ui_name')}</>;
     },
@@ -65,9 +65,11 @@ export const fileTableColumns: ColumnDef<TFile>[] = [
   {
     accessorKey: 'vectorStores',
     header: () => {
-      return 'Vector Stores';
+      const localize = useLocalize();
+      return localize('com_ui_vector_stores');
     },
     cell: ({ row }) => {
+      const localize = useLocalize();
       const { vectorsAttached: attachedVectorStores } = row.original;
       return (
         <>
@@ -80,7 +82,7 @@ export const fileTableColumns: ColumnDef<TFile>[] = [
                 >
                   <PlusIcon className="h-3 w-3" />
                   &nbsp;
-                  {attachedVectorStores.length - index} more
+                  {localize('com_ui_more_count', { 0: attachedVectorStores.length - index })}
                 </span>
               );
             }
