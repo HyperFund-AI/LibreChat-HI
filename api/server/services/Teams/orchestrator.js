@@ -289,9 +289,54 @@ Guidelines:
   return outputText || accumulatedText;
 };
 
-/**
- * Phase 3: Lead synthesizes into final deliverable WITH STREAMING
- */
+const isArtifactComplete = (text) => {
+  const artifactStart = text.indexOf(':::artifact');
+  if (artifactStart === -1) return false;
+  
+  const afterStart = text.substring(artifactStart + 11);
+  const closingTagIndex = afterStart.indexOf(':::');
+  return closingTagIndex !== -1;
+};
+
+const getContinuationContext = (text, maxContextLength = 1500) => {
+  const artifactStart = text.indexOf(':::artifact');
+  if (artifactStart === -1) return '';
+  
+  const markdownStart = text.indexOf('```markdown', artifactStart);
+  if (markdownStart === -1) {
+    const headerEnd = text.indexOf('\n', artifactStart + 11);
+    if (headerEnd === -1) return '';
+    const artifactContent = text.substring(headerEnd + 1);
+    const lines = artifactContent.split('\n');
+    const lastLines = lines.slice(-30).join('\n');
+    return lastLines.length > maxContextLength 
+      ? lastLines.substring(lastLines.length - maxContextLength)
+      : lastLines;
+  }
+  
+  const contentStart = markdownStart + 11;
+  const markdownEnd = text.indexOf('```', contentStart);
+  const artifactEnd = text.indexOf(':::', markdownEnd !== -1 ? markdownEnd : contentStart);
+  
+  const endPos = markdownEnd !== -1 && markdownEnd < artifactEnd ? markdownEnd : artifactEnd;
+  if (endPos === -1) {
+    const artifactContent = text.substring(contentStart);
+    const lines = artifactContent.split('\n');
+    const lastLines = lines.slice(-30).join('\n');
+    return lastLines.length > maxContextLength 
+      ? lastLines.substring(lastLines.length - maxContextLength)
+      : lastLines;
+  }
+  
+  const artifactContent = text.substring(contentStart, endPos);
+  const lines = artifactContent.split('\n');
+  const lastLines = lines.slice(-30).join('\n');
+  
+  return lastLines.length > maxContextLength 
+    ? lastLines.substring(lastLines.length - maxContextLength)
+    : lastLines;
+};
+
 const synthesizeDeliverableStreaming = async ({
   lead,
   userMessage,
@@ -342,34 +387,93 @@ Document contents in markdown
 Only wrap it in the format specified, do not include additional code-tags or other syntax.
 When modifying a deliverable/document make sure the identifier stays the same - it is used to track the document in the system.
 
-If there is no deliverable ready - for example, more information from the user was requested in order to produce it, do not produce an artifact.
-`;
+If there is no deliverable ready - for example, more information from the user was requested in order to produce it, do not produce an artifact.`;
 
   const client = new Anthropic({ apiKey });
-
   let fullText = '';
+  let finishReason = null;
+  let attempts = 0;
+  const maxAttempts = 4;
 
-  // Use streaming for the synthesis
-  const stream = client.messages.stream({
-    model: ORCHESTRATOR_ANTHROPIC_MODEL,
-    max_tokens: 4000,
-    system: systemPrompt,
-    messages: [
-      {
+  while (attempts < maxAttempts) {
+    const isContinuation = attempts > 0;
+    let messages = [];
+    
+    if (isContinuation) {
+      const context = getContinuationContext(fullText, 3000);
+      const artifactStart = fullText.indexOf(':::artifact');
+      const introText = artifactStart > 0 ? fullText.substring(0, artifactStart) : '';
+      const continuationText = introText + (context || fullText.substring(Math.max(0, fullText.length - 3000)));
+      
+      messages.push({
+        role: 'assistant',
+        content: continuationText,
+      });
+      
+      messages.push({
+        role: 'user',
+        content: 'Continue generating from where you left off. Complete the document and make sure to properly close the artifact tag with ::: at the end.',
+      });
+      
+      if (onThinking) {
+        onThinking({
+          agent: lead.name,
+          action: 'continuing',
+          message: `Continuing artifact generation (attempt ${attempts + 1})...`,
+        });
+      }
+    } else {
+      messages.push({
         role: 'user',
         content: `# Objective\n${userMessage}\n\n# Deliverable Structure\n${deliverableOutline || 'Professional analysis document'}\n\n# Specialist Inputs\n\n${inputsSummary}\n\n---\n\nSynthesize into ONE unified deliverable document in Markdown format.`,
-      },
-    ],
-  });
+      });
+    }
 
-  // Stream each chunk
-  for await (const event of stream) {
-    if (event.type === 'content_block_delta' && event.delta?.text) {
-      const chunk = event.delta.text;
-      fullText += chunk;
-      if (onStream) {
-        onStream(chunk);
+    const stream = client.messages.stream({
+      model: ORCHESTRATOR_ANTHROPIC_MODEL,
+      max_tokens: 4000,
+      system: systemPrompt,
+      messages: messages,
+    });
+
+    let currentChunk = '';
+    let lastEvent = null;
+
+    for await (const event of stream) {
+      lastEvent = event;
+      
+      if (event.type === 'content_block_delta' && event.delta?.text) {
+        const chunk = event.delta.text;
+        currentChunk += chunk;
+        fullText += chunk;
+        if (onStream) {
+          onStream(chunk);
+        }
       }
+      
+      if (event.type === 'message_stop' || event.type === 'message_delta') {
+        finishReason = event.finish_reason || event.delta?.stop_reason;
+      }
+    }
+
+    const isComplete = isArtifactComplete(fullText);
+    const needsContinuation = finishReason === 'max_tokens' || (!isComplete && currentChunk.length > 0);
+    
+    if (isComplete || !needsContinuation || attempts >= maxAttempts - 1) {
+      logger.info(`[synthesizeDeliverableStreaming] Artifact complete or no continuation needed, breaking (attempt ${attempts})`);
+      break;
+    }
+    
+    attempts++;
+    logger.info(`[synthesizeDeliverableStreaming] Artifact incomplete, continuing (attempt ${attempts})`);
+  }
+
+  if (!isArtifactComplete(fullText) && fullText.includes(':::artifact')) {
+    logger.warn('[synthesizeDeliverableStreaming] Artifact incomplete, adding closing tag');
+    const closingTag = '\n:::\n';
+    fullText += closingTag;
+    if (onStream) {
+      onStream(closingTag);
     }
   }
 
