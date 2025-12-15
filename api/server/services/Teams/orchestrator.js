@@ -333,7 +333,11 @@ Document contents in markdown
 \`\`\`
 :::
 
-Only wrap it in the format specified, do not include additional code-tags or other syntax.`;
+Only wrap it in the format specified, do not include additional code-tags or other syntax.
+When modifying a deliverable/document make sure the identifier stays the same - it is used to track the document in the system.
+
+If there is no deliverable ready - for example, more information from the user was requested in order to produce it, do not produce an artifact.
+`;
 
   const client = new Anthropic({ apiKey });
 
