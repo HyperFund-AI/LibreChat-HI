@@ -124,10 +124,12 @@ const saveToKnowledge = async ({
       },
     };
 
-    const doc = await TeamKnowledge.findOneAndUpdate(filter, update, {
-      upsert: !onlyUpdate,
-      new: true,
-    });
+    const doc = await TeamKnowledge.findOneAndUpdate(filter, update, { upsert: true, new: true });
+
+    // Trigger embedding generation (Fire and forget, or await if critical)
+    const { upsertDocumentEmbeddings } = require('~/server/utils/vectorUtils');
+    // Using await here to ensure data consistency for now, can be made async if too slow
+    await upsertDocumentEmbeddings(doc);
 
     if (!doc && onlyUpdate) {
       return null;
@@ -230,6 +232,45 @@ const getKnowledgeContext = async (conversationId) => {
   }
 };
 
+/**
+ * Searches the knowledge base for relevant chunks
+ * @param {string} conversationId
+ * @param {string} query
+ * @param {number} k
+ * @returns {Promise<Array<{text: string, score: number, documentId: string}>>}
+ */
+const searchKnowledge = async (conversationId, query, k = 5) => {
+  try {
+    const TeamKnowledgeVector = require('~/models/TeamKnowledgeVector');
+    const { getOpenRouterEmbedding } = require('~/server/utils/embeddings');
+    const { cosineSimilarity } = require('~/server/utils/vectorUtils');
+
+    // 1. Embed query
+    const queryVector = await getOpenRouterEmbedding(query);
+    if (!queryVector) return [];
+
+    // 2. Fetch all vectors for conversation
+    // Optimization: Depending on scale, we might want to fetch only subset or use a real vector index
+    const vectors = await TeamKnowledgeVector.find({ conversationId }).lean();
+
+    if (!vectors.length) return [];
+
+    // 3. Compute scores
+    const scored = vectors.map((v) => ({
+      text: v.text,
+      documentId: v.documentId,
+      score: cosineSimilarity(queryVector, v.vector),
+    }));
+
+    // 4. Sort and top K
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, k);
+  } catch (err) {
+    logger.error('[TeamKnowledge] Error searching knowledge:', err);
+    return [];
+  }
+};
+
 module.exports = {
   TeamKnowledge,
   saveToKnowledge,
@@ -238,4 +279,5 @@ module.exports = {
   deleteKnowledgeDocument,
   clearKnowledge,
   getKnowledgeContext,
+  searchKnowledge,
 };

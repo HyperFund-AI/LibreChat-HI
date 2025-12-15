@@ -9,16 +9,24 @@ const OpenAI = require('openai');
  * @returns {Promise<number[]>} The generated embedding.
  */
 const getOpenRouterEmbedding = async (text, model) => {
-  const apiKey = process.env.OPENROUTER_KEY;
-  if (!apiKey) {
-    throw new Error('OPENROUTER_KEY is not set in environment variables');
-  }
+  let apiKey = process.env.OPENROUTER_KEY;
+  let baseURL = 'https://openrouter.ai/api/v1';
+  let currentModel = model || process.env.EMBEDDINGS_MODEL || 'text-embedding-3-small';
 
-  const currentModel = model || process.env.EMBEDDINGS_MODEL || 'text-embedding-3-small';
+  if (!apiKey) {
+    // Fallback to OpenAI Key
+    apiKey = process.env.OPENAI_API_KEY;
+    if (apiKey) {
+      baseURL = 'https://api.openai.com/v1';
+      currentModel = 'text-embedding-3-small';
+    } else {
+      throw new Error('Neither OPENROUTER_KEY nor OPENAI_API_KEY is set in environment variables');
+    }
+  }
 
   const openai = new OpenAI({
     apiKey,
-    baseURL: 'https://openrouter.ai/api/v1',
+    baseURL,
   });
 
   try {

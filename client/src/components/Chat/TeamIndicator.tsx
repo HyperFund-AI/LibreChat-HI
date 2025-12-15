@@ -12,6 +12,7 @@ import {
   Trash2,
   Eye,
   Calendar,
+  Upload,
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRecoilState } from 'recoil';
@@ -185,6 +186,7 @@ const isApprovalMessage = (text: string): boolean => {
 
 export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
   const localize = useLocalize();
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [previousTeamCount, setPreviousTeamCount] = useState(0);
@@ -256,6 +258,50 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
       setSelectedDocument(null);
     },
   });
+
+  // Mutation to save uploaded document
+  const saveKnowledgeMutation = useMutation({
+    mutationFn: async (vars: { title: string; content: string }) => {
+      return dataService.saveToTeamKnowledge(conversationId!, {
+        title: vars.title,
+        content: vars.content,
+        messageId: 'user-upload',
+        tags: ['user-upload'],
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(['teamKnowledge', conversationId]);
+      refetchKnowledge();
+      setActiveTab('knowledge'); // Switch to knowledge tab to see the new file
+    },
+  });
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.md')) {
+      alert(localize('com_ui_only_markdown_supported') || 'Only .md files are supported');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      if (content) {
+        saveKnowledgeMutation.mutate({
+          title: file.name.replace(/\.md$/i, ''),
+          content,
+        });
+      }
+    };
+    reader.readAsText(file);
+
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   // Find messages that contain team specifications
   const teamSpecMessage = useMemo(() => {
@@ -338,13 +384,14 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (saveKnowledgeMutation.isLoading) return;
         setIsModalOpen(false);
         setSelectedAgent(null);
       }
     };
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, []);
+  }, [saveKnowledgeMutation.isLoading]);
 
   if (isNewConvo) return null;
 
@@ -417,6 +464,7 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm"
           onClick={() => {
+            if (saveKnowledgeMutation.isLoading) return;
             setIsModalOpen(false);
             setSelectedAgent(null);
           }}
@@ -445,11 +493,17 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                 </div>
                 <button
                   onClick={() => {
+                    if (saveKnowledgeMutation.isLoading) return;
                     setIsModalOpen(false);
                     setSelectedAgent(null);
                     setSelectedDocument(null);
                   }}
-                  className="rounded-full p-2 text-white/80 transition-colors hover:bg-white/20 hover:text-white"
+                  disabled={saveKnowledgeMutation.isLoading}
+                  className={`rounded-full p-2 transition-colors ${
+                    saveKnowledgeMutation.isLoading
+                      ? 'cursor-not-allowed opacity-50'
+                      : 'text-white/80 hover:bg-white/20 hover:text-white'
+                  }`}
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -494,6 +548,28 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
                   </span>
                 )}
               </button>
+              <div className="ml-auto mr-4 flex items-center">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileUpload}
+                  accept=".md"
+                  className="hidden"
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={saveKnowledgeMutation.isLoading}
+                  className="flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-600 transition-colors hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 dark:hover:bg-indigo-900/50"
+                  title={localize('com_ui_upload_knowledge') || 'Upload .md document'}
+                >
+                  {saveKnowledgeMutation.isLoading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="h-3.5 w-3.5" />
+                  )}
+                  {localize('com_ui_upload')}
+                </button>
+              </div>
             </div>
 
             {/* Content */}
