@@ -140,18 +140,27 @@ export const ArtifactPreview = memo(function ({
   currentCode?: string;
   startupConfig?: TStartupConfig;
 }) {
-  // Check if this is a markdown artifact
+  // Check if this is a text-based artifact that should use markdown rendering
   const isMarkdown = fileKey === 'content.md';
+  const isReact = fileKey === 'App.tsx' || fileKey === 'App.jsx';
+  const isMermaid = fileKey === 'diagram.mmd';
+  
+  // Check if content looks like actual HTML (starts with DOCTYPE or html tag)
+  const fileContent = files[fileKey];
+  const contentStr = typeof fileContent === 'string' ? fileContent : '';
+  const looksLikeHtml = contentStr.trim().startsWith('<!') || contentStr.trim().startsWith('<html');
+  const isActualHtml = fileKey === 'index.html' && looksLikeHtml;
+  
+  // Use direct markdown rendering for markdown files, or any content that's not actual code
+  const useDirectMarkdown = isMarkdown || (!isActualHtml && !isReact && !isMermaid);
 
   // Use refs to store initial files - this prevents SandpackProvider remounts during streaming
   // The PreviewWithUpdater component handles live updates via updateFile API
   const initialFilesRef = useRef<ArtifactFiles | null>(null);
   const lastFileKeyRef = useRef<string | null>(null);
 
-  // Get content from files
-  const fileContent = files[fileKey];
-  const codeFromFiles = typeof fileContent === 'string' ? fileContent : '';
-  const code = currentCode ?? codeFromFiles;
+  // Get content from files (contentStr already computed above for HTML detection)
+  const code = currentCode ?? contentStr;
 
   // Compute current files for initial capture (for Sandpack)
   const computedFiles = useMemo((): ArtifactFiles => {
@@ -197,8 +206,8 @@ export const ArtifactPreview = memo(function ({
     };
   }, [startupConfig, template]);
 
-  // For markdown, render directly with react-markdown (much faster streaming)
-  if (isMarkdown) {
+  // For text-based content, render directly with react-markdown (much faster streaming)
+  if (useDirectMarkdown) {
     return (
       <div className="h-full w-full p-0 m-0">
         <MarkdownPreview content={code} />

@@ -50,12 +50,13 @@ export default function Artifacts() {
   const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
 
+  // Code tab hidden - showing Preview only
   const tabOptions = [
-    {
-      value: 'code',
-      label: localize('com_ui_code'),
-      icon: <Code className="size-4" />,
-    },
+    // {
+    //   value: 'code',
+    //   label: localize('com_ui_code'),
+    //   icon: <Code className="size-4" />,
+    // },
     {
       value: 'preview',
       label: localize('com_ui_preview'),
@@ -338,7 +339,8 @@ export default function Artifacts() {
               isMobile ? 'justify-center' : 'overflow-hidden',
             )}
           >
-            {!isMobile && (
+            {/* Tab selector hidden - showing Preview only */}
+            {/* {!isMobile && (
               <div
                 className={cn(
                   'flex items-center transition-all duration-500',
@@ -354,7 +356,7 @@ export default function Artifacts() {
                   disabled={isMutating && activeTab !== 'code'}
                 />
               </div>
-            )}
+            )} */}
 
             <div
               className={cn(
@@ -384,9 +386,10 @@ export default function Artifacts() {
                   }
                 />
               )}
-              {activeTab !== 'preview' && isMutating && (
+              {/* Code tab mutation indicator hidden */}
+              {/* {activeTab !== 'preview' && isMutating && (
                 <RefreshCw size={16} className="animate-spin text-text-secondary" />
-              )}
+              )} */}
               {orderedArtifactIds.length > 1 && (
                 <ArtifactVersion
                   currentIndex={currentIndex}
@@ -491,7 +494,8 @@ export default function Artifacts() {
             </output>
           </div>
 
-          {isMobile && (
+          {/* Mobile tab selector hidden - showing Preview only */}
+          {/* {isMobile && (
             <div className="flex-shrink-0 border-t border-border-light bg-surface-primary-alt p-2">
               <Radio
                 fullWidth
@@ -501,7 +505,7 @@ export default function Artifacts() {
                 disabled={isMutating && activeTab !== 'code'}
               />
             </div>
-          )}
+          )} */}
         </div>
       </div>
     </Tabs.Root>
