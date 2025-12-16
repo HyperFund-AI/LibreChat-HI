@@ -124,10 +124,12 @@ const saveToKnowledge = async ({
       },
     };
 
-    const doc = await TeamKnowledge.findOneAndUpdate(filter, update, {
-      upsert: !onlyUpdate,
-      new: true,
-    });
+    const doc = await TeamKnowledge.findOneAndUpdate(filter, update, { upsert: true, new: true });
+
+    // Trigger embedding generation (Fire and forget, or await if critical)
+    const { upsertDocumentEmbeddings } = require('~/server/utils/vectorUtils');
+    // Using await here to ensure data consistency for now, can be made async if too slow
+    await upsertDocumentEmbeddings(doc);
 
     if (!doc && onlyUpdate) {
       return null;
@@ -211,22 +213,93 @@ const clearKnowledge = async (conversationId) => {
  * @param {string} conversationId - The conversation ID
  * @returns {Promise<string>} Formatted knowledge context
  */
-const getKnowledgeContext = async (conversationId) => {
+const getKnowledgeContext = async (conversationId, query = null) => {
   try {
-    const docs = await getKnowledge(conversationId);
+    let context = '';
 
-    if (docs.length === 0) {
-      return '';
+    if (query) {
+      // 1. Semantic search
+      const chunks = await searchKnowledge(conversationId, query, 10);
+      if (chunks.length > 0) {
+        // 2. Fetch titles for the found chunks
+        const docIds = [...new Set(chunks.map((c) => c.documentId))];
+        const docs = await TeamKnowledge.find({ documentId: { $in: docIds } })
+          .select('documentId title')
+          .lean();
+        const titleMap = docs.reduce((acc, doc) => {
+          acc[doc.documentId] = doc.title;
+          return acc;
+        }, {});
+
+        context = chunks
+          .map((chunk, i) => {
+            const meta = chunk.metadata || {};
+            const lineInfo =
+              meta.loc && meta.loc.lines
+                ? ` (Lines ${meta.loc.lines.from}-${meta.loc.lines.to})`
+                : '';
+            const title = titleMap[chunk.documentId] || 'Unknown Document';
+            return `### Chunk ${i + 1} from "${title}" (ID: ${chunk.documentId})${lineInfo}\n${chunk.text}`;
+          })
+          .join('\n\n---\n\n');
+      }
     }
 
-    const context = docs
-      .map((doc, i) => `### Document ${i + 1}: ${doc.title}\n${doc.content}`)
-      .join('\n\n---\n\n');
+    // TODO old "dump everything" method
+    // if (!context) {
+    //   const docs = await getKnowledge(conversationId);
+    //   if (docs.length === 0) {
+    //     return '';
+    //   }
+    //   context = docs
+    //     .map((doc, i) => `### Document ${i + 1}: ${doc.title}\n${doc.content}`)
+    //     .join('\n\n---\n\n');
+    // }
 
-    return `## Team Knowledge Base\nThe following documents have been previously created and approved by the team:\n\n${context}`;
+    return `## Team Knowledge Base\nThe following documents have been retrieval from the team knowledge base:\n\n${context}`;
   } catch (error) {
     logger.error('[TeamKnowledge] Error formatting knowledge context:', error);
     return '';
+  }
+};
+
+/**
+ * Searches the knowledge base for relevant chunks
+ * @param {string} conversationId
+ * @param {string} query
+ * @param {number} k
+ * @returns {Promise<Array<{text: string, score: number, documentId: string}>>}
+ */
+const searchKnowledge = async (conversationId, query, k = 5) => {
+  try {
+    const TeamKnowledgeVector = require('~/models/TeamKnowledgeVector');
+    const { getOpenRouterEmbedding } = require('~/server/utils/embeddings');
+    const { cosineSimilarity } = require('~/server/utils/vectorUtils');
+
+    // 1. Embed query
+    const queryVector = await getOpenRouterEmbedding(query);
+    if (!queryVector) return [];
+
+    // 2. Fetch all vectors for conversation
+    // Optimization: Depending on scale, we might want to fetch only subset or use a real vector index
+    const vectors = await TeamKnowledgeVector.find({ conversationId }).lean();
+
+    if (!vectors.length) return [];
+
+    // 3. Compute scores
+    const scored = vectors.map((v) => ({
+      text: v.text,
+      documentId: v.documentId,
+      score: cosineSimilarity(queryVector, v.vector),
+      metadata: v.metadata,
+    }));
+
+    // 4. Sort and top K
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, k);
+  } catch (err) {
+    logger.error('[TeamKnowledge] Error searching knowledge:', err);
+    return [];
   }
 };
 
@@ -238,4 +311,5 @@ module.exports = {
   deleteKnowledgeDocument,
   clearKnowledge,
   getKnowledgeContext,
+  searchKnowledge,
 };

@@ -71,7 +71,7 @@ async function handleTeamOrchestration(
     const conversation = await getConvo(userId, conversationId);
 
     // Load team knowledge base for context
-    const knowledgeContext = await getKnowledgeContext(conversationId);
+    const knowledgeContext = await getKnowledgeContext(conversationId, text);
     if (knowledgeContext) {
       logger.info(
         `[handleTeamOrchestration] Loaded knowledge base context (${knowledgeContext.length} chars)`,
