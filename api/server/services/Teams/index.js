@@ -25,6 +25,15 @@ const {
   synthesizeDeliverableStreaming,
   orchestrateTeamResponse,
   shouldUseTeamOrchestration,
+  // QA Gate functions
+  executeQAGate,
+  executeQAReview,
+  executeQARemediation,
+  resumeQAGate,
+  // State management
+  getOrchestrationState,
+  saveOrchestrationState,
+  clearOrchestrationState,
 } = require('./orchestrator');
 
 module.exports = {
@@ -56,6 +65,17 @@ module.exports = {
   synthesizeDeliverableStreaming,
   orchestrateTeamResponse,
   shouldUseTeamOrchestration,
+
+  // QA Gate (Phase 5: Enhanced QA Gate Protocol)
+  executeQAGate,
+  executeQAReview,
+  executeQARemediation,
+  resumeQAGate,
+
+  // State management for resumable orchestrations
+  getOrchestrationState,
+  saveOrchestrationState,
+  clearOrchestrationState,
 
   // Prompts
   FILE_ANALYSIS_PROMPT,

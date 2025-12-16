@@ -17,6 +17,10 @@ const {
   mergeTeamMembers,
   extractTeamCompositionWithLLM,
   validateAndEnhanceTeam,
+  // QA Gate functions
+  executeQAGate,
+  resumeQAGate,
+  getOrchestrationState,
 } = require('~/server/services/Teams');
 const { getTeamAgents, getTeamInfo, saveTeamAgents } = require('~/models/Conversation');
 const { getMessages } = require('~/models');
@@ -76,6 +80,115 @@ async function handleTeamOrchestration(
       logger.info(
         `[handleTeamOrchestration] Loaded knowledge base context (${knowledgeContext.length} chars)`,
       );
+    }
+
+    // Check for pending QA Gate state (user responding to approve/reject)
+    const pendingState = getOrchestrationState(conversationId);
+    if (pendingState?.phase === 'qa_gate') {
+      logger.info('[handleTeamOrchestration] Found pending QA Gate state, resuming...');
+
+      // Create and save user message for QA response
+      const qaUserMessage = {
+        messageId: userMessageId,
+        conversationId: conversationId,
+        parentMessageId: parentMessageId || Constants.NO_PARENT,
+        isCreatedByUser: true,
+        user: userId,
+        text: text,
+        sender: 'User',
+        endpoint: 'agents',
+      };
+      await saveMessage(req, qaUserMessage, { context: 'handleTeamOrchestration - QA response' });
+
+      // Send sync event
+      sendEvent(res, {
+        sync: true,
+        conversationId,
+        thread_id: conversationId,
+        responseMessage: {
+          messageId: responseMessageId,
+          conversationId: conversationId,
+          parentMessageId: userMessageId,
+          isCreatedByUser: false,
+          text: '',
+          sender: 'Team',
+        },
+        requestMessage: qaUserMessage,
+      });
+
+      // Track streamed QA content
+      let qaStreamedText = '';
+
+      // Resume QA Gate with user's response
+      const qaResult = await resumeQAGate({
+        pendingState,
+        userResponse: text,
+        apiKey: req.config?.endpoints?.anthropic?.apiKey || process.env.ANTHROPIC_API_KEY,
+        conversationId,
+        onThinking: (thinking) => {
+          sendEvent(res, {
+            event: 'on_thinking',
+            data: {
+              agent: thinking.agent,
+              role: thinking.role || '',
+              action: thinking.action,
+              message: thinking.message,
+              collaboration: thinking.collaboration || null,
+            },
+          });
+        },
+        onStream: (chunk) => {
+          qaStreamedText += chunk;
+          sendEvent(res, {
+            type: ContentTypes.TEXT,
+            text: qaStreamedText,
+            index: 0,
+            messageId: responseMessageId,
+            conversationId: conversationId,
+          });
+        },
+      });
+
+      // Create QA response message
+      const qaResponseMessage = {
+        messageId: responseMessageId,
+        conversationId: conversationId,
+        parentMessageId: userMessageId,
+        isCreatedByUser: false,
+        user: userId,
+        text: qaResult.formattedResponse,
+        sender: 'Team',
+        model: 'team-collaboration',
+        endpoint: 'agents',
+        unfinished: false,
+        error: !qaResult.success,
+      };
+      await saveMessage(req, qaResponseMessage, {
+        context: 'handleTeamOrchestration - QA response',
+      });
+
+      // Update conversation
+      const qaConvoUpdate = {
+        conversationId: conversationId,
+        user: userId,
+        endpoint: 'agents',
+        model: 'team-collaboration',
+        title: conversation?.title || 'Team Conversation',
+      };
+      await saveConvo(req, qaConvoUpdate, { context: 'handleTeamOrchestration - save convo after QA' });
+
+      // Send final event
+      sendEvent(res, {
+        final: true,
+        conversation: qaConvoUpdate,
+        title: qaConvoUpdate.title,
+        requestMessage: qaUserMessage,
+        responseMessage: qaResponseMessage,
+      });
+
+      res.end();
+      logger.info('[handleTeamOrchestration] QA Gate resumption completed');
+      return;
     }
 
     // Create and save user message
@@ -212,7 +325,100 @@ async function handleTeamOrchestration(
     };
     await saveConvo(req, convoUpdate, { context: 'handleTeamOrchestration - save convo' });
 
-    // Send final event
+    // AUTO-TRIGGER QA GATE after deliverable is complete (Phase 5: Enhanced QA Gate Protocol)
+    // Only trigger if orchestration completed with a deliverable (not waiting for specialist input)
+    if (orchestrationResult.success && !orchestrationResult.waitingForInput) {
+      // Trigger QA Gate (will use QA agent if available, otherwise fallback to lead/specialist)
+      if (teamAgents.length > 0) {
+        logger.info(
+          `[handleTeamOrchestration] Triggering QA Gate with ${teamAgents.length} team agent(s)`,
+        );
+
+        // Send separator before QA review
+        streamedText += '\n\n---\n\n**Initiating QA Review...**\n\n';
+        sendEvent(res, {
+          type: ContentTypes.TEXT,
+          text: streamedText,
+          index: 0,
+          messageId: responseMessageId,
+          conversationId: conversationId,
+        });
+
+        // Execute QA Gate
+        const qaResult = await executeQAGate({
+          deliverable: orchestrationResult.formattedResponse,
+          userMessage: text,
+          teamAgents,
+          specialistInputs: orchestrationResult.responses || [],
+          apiKey: req.config?.endpoints?.anthropic?.apiKey || process.env.ANTHROPIC_API_KEY,
+          conversationId,
+          onThinking: (thinking) => {
+            sendEvent(res, {
+              event: 'on_thinking',
+              data: {
+                agent: thinking.agent,
+                role: thinking.role || '',
+                action: thinking.action,
+                message: thinking.message,
+                collaboration: thinking.collaboration || null,
+              },
+            });
+          },
+          onStream: (chunk) => {
+            streamedText += chunk;
+            sendEvent(res, {
+              type: ContentTypes.TEXT,
+              text: streamedText,
+              index: 0,
+              messageId: responseMessageId,
+              conversationId: conversationId,
+            });
+          },
+        });
+
+        if (qaResult.waitingForInput) {
+          // QA Gate is waiting for user approval
+          logger.info('[handleTeamOrchestration] QA Gate waiting for user approval');
+
+          // Update the response message with QA question
+          const qaQuestionMessageId = uuidv4();
+          const qaQuestionMessage = {
+            messageId: qaQuestionMessageId,
+            conversationId: conversationId,
+            parentMessageId: responseMessageId,
+            isCreatedByUser: false,
+            user: userId,
+            text: qaResult.formattedQuestion,
+            sender: 'Team',
+            model: 'team-collaboration',
+            endpoint: 'agents',
+            unfinished: false,
+          };
+          await saveMessage(req, qaQuestionMessage, {
+            context: 'handleTeamOrchestration - QA question',
+          });
+
+          // Send final event with QA waiting flag
+          sendEvent(res, {
+            final: true,
+            conversation: convoUpdate,
+            title: convoUpdate.title,
+            requestMessage: userMessage,
+            responseMessage: qaQuestionMessage,
+            qaWaitingForApproval: true,
+          });
+
+          res.end();
+          logger.info('[handleTeamOrchestration] QA Gate question sent, waiting for user response');
+          return;
+        }
+
+        // QA Gate was skipped (shouldn't happen since we checked above)
+        logger.info('[handleTeamOrchestration] QA Gate completed without waiting');
+      }
+    }
+
+    // Send final event (normal flow without QA Gate, or orchestration waiting for input)
     sendEvent(res, {
       final: true,
       conversation: convoUpdate,

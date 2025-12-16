@@ -3,7 +3,12 @@ const { logger } = require('@librechat/data-schemas');
 const { Constants, ContentTypes } = require('librechat-data-provider');
 const { getMessages, saveMessage, saveConvo, getConvo, saveToKnowledge } = require('~/models');
 const { getTeamAgents } = require('~/models/Conversation');
-const { orchestrateTeamResponse } = require('~/server/services/Teams');
+const {
+  orchestrateTeamResponse,
+  executeQAGate,
+  resumeQAGate,
+  getOrchestrationState,
+} = require('~/server/services/Teams');
 const {
   extractArtifactsWithMetadata,
   getArtifactDedupeKey,
@@ -79,6 +84,99 @@ const teamChatController = async (req, res) => {
     if (conversation?.teamFileId) {
       // TODO: Load file context from the team file
       // For now, we'll pass empty context
+    }
+
+    // Check for pending QA Gate state (user responding to approve/reject)
+    const pendingState = getOrchestrationState(conversationId);
+    if (pendingState?.phase === 'qa_gate') {
+      logger.info('[teamChatController] Found pending QA Gate state, resuming...');
+
+      // Create user message for the QA response
+      const userMessage = {
+        messageId: userMessageId,
+        conversationId,
+        parentMessageId,
+        isCreatedByUser: true,
+        user: userId,
+        text,
+        sender: 'User',
+      };
+
+      await saveMessage(req, userMessage, { context: 'teamChatController - QA response message' });
+
+      sendSSE(res, {
+        created: true,
+        message: userMessage,
+        conversationId,
+      });
+
+      // Resume QA Gate with user's response
+      const qaResult = await resumeQAGate({
+        pendingState,
+        userResponse: text,
+        apiKey: req.config?.endpoints?.anthropic?.apiKey || process.env.ANTHROPIC_API_KEY,
+        conversationId,
+        onThinking: (thinkingData) => {
+          sendSSE(res, {
+            type: ContentTypes.THINKING,
+            ...thinkingData,
+          });
+        },
+        onStream: (chunk) => {
+          sendSSE(res, {
+            type: ContentTypes.TEXT,
+            text: chunk,
+          });
+        },
+      });
+
+      // Create QA response message
+      const qaResponseMessage = {
+        messageId: responseMessageId,
+        conversationId,
+        parentMessageId: userMessageId,
+        isCreatedByUser: false,
+        user: userId,
+        text: qaResult.formattedResponse,
+        sender: 'Team',
+        model: 'team-collaboration',
+        endpoint: 'teams',
+        content: [
+          {
+            type: ContentTypes.TEXT,
+            [ContentTypes.TEXT]: qaResult.formattedResponse,
+          },
+        ],
+        metadata: {
+          qaApproved: qaResult.qaApproved,
+          phase: 'qa_gate_complete',
+        },
+      };
+
+      await saveMessage(req, qaResponseMessage, { context: 'teamChatController - QA response' });
+
+      // Update conversation
+      const convoUpdate = {
+        conversationId,
+        user: userId,
+        endpoint: 'teams',
+        model: 'team-collaboration',
+        title: conversation?.title || 'Team Conversation',
+      };
+
+      await saveConvo(req, convoUpdate, { context: 'teamChatController - save convo after QA' });
+
+      sendSSE(res, {
+        final: true,
+        conversation: convoUpdate,
+        title: convoUpdate.title,
+        requestMessage: userMessage,
+        responseMessage: qaResponseMessage,
+      });
+
+      res.end();
+      logger.info('[teamChatController] QA Gate resumption completed');
+      return;
     }
 
     // Create user message
@@ -228,7 +326,98 @@ const teamChatController = async (req, res) => {
 
     await saveConvo(req, convoUpdate, { context: 'teamChatController - save convo' });
 
-    // Send final event
+    // AUTO-TRIGGER QA GATE after deliverable is complete (Phase 5: Enhanced QA Gate Protocol)
+    // Only trigger if orchestration completed with a deliverable (not waiting for specialist input)
+    if (orchestrationResult.success && !orchestrationResult.waitingForInput) {
+      // Check if QA agents exist (Tier 5)
+      const qaAgents = teamAgents.filter((a) => parseInt(a.tier) === 5);
+
+      if (qaAgents.length > 0) {
+        logger.info(
+          `[teamChatController] Found ${qaAgents.length} QA agent(s), triggering QA Gate`,
+        );
+
+        // Send deliverable first as an intermediate message
+        sendSSE(res, {
+          type: ContentTypes.TEXT,
+          text: '\n\n---\n\n**Initiating QA Review...**\n\n',
+        });
+
+        // Execute QA Gate
+        const qaResult = await executeQAGate({
+          deliverable: orchestrationResult.formattedResponse,
+          userMessage: text,
+          teamAgents,
+          specialistInputs: orchestrationResult.responses || [],
+          apiKey: req.config?.endpoints?.anthropic?.apiKey || process.env.ANTHROPIC_API_KEY,
+          conversationId,
+          onThinking: (thinkingData) => {
+            sendSSE(res, {
+              type: ContentTypes.THINKING,
+              ...thinkingData,
+            });
+          },
+          onStream: (chunk) => {
+            sendSSE(res, {
+              type: ContentTypes.TEXT,
+              text: chunk,
+            });
+          },
+        });
+
+        if (qaResult.waitingForInput) {
+          // QA Gate is waiting for user approval - send intermediate final event
+          logger.info('[teamChatController] QA Gate waiting for user approval');
+
+          // Create QA question message
+          const qaQuestionMessage = {
+            messageId: uuidv4(),
+            conversationId,
+            parentMessageId: responseMessageId,
+            isCreatedByUser: false,
+            user: userId,
+            text: qaResult.formattedQuestion,
+            sender: 'Team',
+            model: 'team-collaboration',
+            endpoint: 'teams',
+            content: [
+              {
+                type: ContentTypes.TEXT,
+                [ContentTypes.TEXT]: qaResult.formattedQuestion,
+              },
+            ],
+            metadata: {
+              qaAgentName: qaResult.qaAgentName,
+              qaAgentRole: qaResult.qaAgentRole,
+              phase: 'qa_gate_pending',
+              waitingForInput: true,
+            },
+          };
+
+          await saveMessage(req, qaQuestionMessage, {
+            context: 'teamChatController - QA question',
+          });
+
+          sendSSE(res, {
+            final: true,
+            conversation: convoUpdate,
+            title: convoUpdate.title,
+            requestMessage: userMessage,
+            responseMessage: qaQuestionMessage,
+            qaWaitingForApproval: true,
+          });
+
+          res.end();
+          logger.info('[teamChatController] QA Gate question sent, waiting for user response');
+          return;
+        }
+
+        // QA Gate skipped (no QA agent) - this shouldn't happen since we checked above
+        logger.info('[teamChatController] QA Gate completed without waiting');
+      }
+    }
+
+    // Send final event (normal flow without QA Gate, or QA Gate skipped)
     sendSSE(res, {
       final: true,
       conversation: convoUpdate,
