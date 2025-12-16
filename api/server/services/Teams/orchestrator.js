@@ -222,9 +222,111 @@ const zLeadAnalysisSchema = z.object({
  * Team Orchestrator - Smart Collaboration Flow with Visible Progress
  *
  * 1. Project Lead analyzes objective and selects relevant specialists
- * 2. Selected specialists contribute (visible collaboration)
- * 3. Project Lead synthesizes into ONE unified deliverable (streamed)
+ * 2. Action Plan presented for user approval (Gate 3)
+ * 3. Selected specialists contribute (visible collaboration)
+ * 4. Project Lead synthesizes into ONE unified deliverable (streamed)
  */
+
+/**
+ * Generate Action Plan and request user approval using tool-like mechanism
+ * Returns pendingQuestion for the approval request
+ */
+const generateActionPlanWithApproval = async ({
+  lead,
+  workPlan,
+  selectedSpecialists,
+  userMessage,
+  apiKey,
+  onStream,
+  onThinking,
+}) => {
+  const client = new Anthropic({ apiKey });
+
+  // Build specialist assignments for the action plan
+  const specialistAssignments = selectedSpecialists
+    .map((s, i) => {
+      const assignment = workPlan.assignments?.[i + 1] || workPlan.assignments?.[(i + 1).toString()] || 'General analysis';
+      return `- **${s.name}** (${s.role}): ${assignment}`;
+    })
+    .join('\n');
+
+  const systemPrompt = `You are ${lead.name}, ${lead.role}.
+
+${lead.instructions || ''}
+
+You are presenting the Action Plan to the user for approval. The team has been assembled and you've completed preliminary analysis.
+
+## Your Task
+Generate a professional Action Plan presentation that:
+1. Frames this as research-based recommendations from preliminary analysis
+2. Presents the recommended approach with parallel workstreams
+3. Defines the deliverable structure
+4. Explains the quality assurance protocol
+5. Ends naturally (do NOT include approval request - system will handle that)
+
+## Team Selected for This Project
+${specialistAssignments}
+
+## Deliverable Outline
+${workPlan.deliverableOutline || 'Comprehensive analysis document'}
+
+## Format Guidelines
+- Use professional, confident language
+- Show strategic thinking and deep expertise
+- Make it executive-ready
+- Keep it concise but thorough (300-400 words)
+
+${energySectorContext}`;
+
+  const userPrompt = `Generate the Action Plan presentation for this objective:
+
+${userMessage}
+
+Present your recommended approach.`;
+
+  if (onThinking) {
+    onThinking({
+      agent: lead.name,
+      role: lead.role,
+      action: 'planning',
+      message: 'Preparing recommended action plan...',
+    });
+  }
+
+  let actionPlanText = '';
+
+  // Stream the action plan
+  const stream = await client.messages.stream({
+    model: ORCHESTRATOR_ANTHROPIC_MODEL,
+    max_tokens: 2000,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+
+  for await (const event of stream) {
+    if (event.type === 'content_block_delta' && event.delta?.text) {
+      const chunk = event.delta.text;
+      actionPlanText += chunk;
+      if (onStream) {
+        onStream(chunk);
+      }
+    }
+  }
+
+  // Return the action plan text and a pending question for approval
+  // This uses the same mechanism as ASK_USER_TOOL with importance: "critical"
+  return {
+    actionPlanText,
+    pendingQuestion: {
+      agent: lead.name,
+      agentRole: lead.role,
+      question: 'Ready to proceed on your authorization. Do you approve this action plan?',
+      options: ['Yes, proceed with the analysis', 'I have changes or questions'],
+      importance: 'critical',
+      isActionPlanApproval: true, // Flag to identify this is action plan approval
+    },
+  };
+};
 
 /**
  * Phase 1: Lead analyzes objective and creates work plan
@@ -1542,13 +1644,11 @@ const resumeOrchestration = async ({
     pendingQuestion,
     lead,
     originalUserMessage,
+    waitingForActionPlanApproval,
   } = pendingState;
 
   logger.info(
     `[resumeOrchestration] Resuming with user answer: "${userMessage.substring(0, 100)}..."`,
-  );
-  logger.info(
-    `[resumeOrchestration] Resuming from specialist ${stoppedAtSpecialistIndex}, ${specialistInputs.length} inputs accumulated`,
   );
 
   // Clear the pending state since we're resuming
@@ -1563,6 +1663,192 @@ const resumeOrchestration = async ({
 
   // Get the full lead agent
   const fullLead = teamAgents.find((a) => a.name === lead.name) || lead;
+
+  // Handle Action Plan approval - start specialists from the beginning
+  if (waitingForActionPlanApproval) {
+    logger.info(
+      `[resumeOrchestration] Action Plan approved by user - starting PHASE 2 (specialists)`,
+    );
+
+    if (onThinking) {
+      onThinking({
+        agent: fullLead.name,
+        role: fullLead.role,
+        action: 'starting',
+        message: 'Action plan approved. Initiating specialist workstreams...',
+      });
+    }
+
+    // Start executing specialists from the beginning
+    let currentSpecialistInputs = [];
+    let currentResponses = [];
+    let pendingUserQuestion = null;
+    let newStoppedAtIndex = -1;
+
+    for (let i = 0; i < fullSelectedSpecialists.length; i++) {
+      const specialist = fullSelectedSpecialists[i];
+      if (onAgentStart) onAgentStart(specialist);
+
+      const idx = specialists.findIndex((s) => s.name === specialist.name) + 1;
+      const assignment =
+        workPlan.assignments?.[idx.toString()] || workPlan.assignments?.[idx] || '';
+
+      const specialistResult = await executeSpecialist({
+        agent: specialist,
+        assignment,
+        userMessage: originalUserMessage,
+        apiKey,
+        onThinking,
+        previousContributions: [...currentSpecialistInputs],
+        conversationHistory,
+        fileContext,
+        knowledgeContext,
+        availableSpecialists: fullSelectedSpecialists,
+      });
+
+      // Check if specialist has a pending critical question
+      if (specialistResult.pendingQuestion) {
+        logger.info(
+          `[resumeOrchestration] ${specialist.name} has pending CRITICAL question`,
+        );
+        pendingUserQuestion = specialistResult.pendingQuestion;
+        newStoppedAtIndex = i;
+
+        if (specialistResult.response) {
+          currentSpecialistInputs.push({
+            name: specialist.name,
+            role: specialist.role,
+            response: specialistResult.response,
+            hasPendingQuestion: true,
+          });
+        }
+
+        break;
+      }
+
+      currentSpecialistInputs.push({
+        name: specialist.name,
+        role: specialist.role,
+        response: specialistResult.response,
+      });
+
+      currentResponses.push({
+        agentId: specialist.agentId,
+        agentName: specialist.name,
+        agentRole: specialist.role,
+        response: specialistResult.response,
+      });
+
+      if (onAgentComplete)
+        onAgentComplete({
+          agentName: specialist.name,
+          agentRole: specialist.role,
+          response: specialistResult.response,
+        });
+
+      logger.info(
+        `[resumeOrchestration] Specialist ${i + 1}/${fullSelectedSpecialists.length} (${specialist.name}) completed`,
+      );
+    }
+
+    // If there's a pending question, save state and return
+    if (pendingUserQuestion) {
+      if (conversationId) {
+        const stateToSave = {
+          workPlan,
+          specialistInputs: currentSpecialistInputs,
+          responses: currentResponses,
+          selectedSpecialists,
+          stoppedAtSpecialistIndex: newStoppedAtIndex,
+          pendingQuestion: pendingUserQuestion,
+          lead,
+          originalUserMessage,
+        };
+        saveOrchestrationState(conversationId, stateToSave);
+      }
+
+      const optionsArray = Array.isArray(pendingUserQuestion.options)
+        ? pendingUserQuestion.options
+        : [];
+      const optionsText =
+        optionsArray.length > 0
+          ? '\n\n**Options:**\n' + optionsArray.map((o, i) => `${i + 1}. ${o}`).join('\n')
+          : '';
+
+      const questionMessage = `**${pendingUserQuestion.agent}** (${pendingUserQuestion.agentRole}) needs additional clarification:
+
+---
+
+${pendingUserQuestion.question}${optionsText}
+
+---
+
+_Please respond to continue the analysis._`;
+
+      if (onStream) {
+        await streamTextIncrementally(questionMessage, onStream);
+      }
+
+      return {
+        success: true,
+        waitingForInput: true,
+        pendingQuestion: pendingUserQuestion,
+        responses: currentResponses,
+        formattedResponse: questionMessage,
+        selectedAgents: [fullLead, ...fullSelectedSpecialists.slice(0, newStoppedAtIndex + 1)].map(
+          (a) => ({
+            id: a.agentId,
+            name: a.name,
+            role: a.role,
+          }),
+        ),
+      };
+    }
+
+    // All specialists complete - synthesize
+    if (onAgentStart) onAgentStart({ ...fullLead, phase: 'synthesis' });
+
+    const finalDeliverable = await synthesizeDeliverableStreaming({
+      lead: fullLead,
+      userMessage: originalUserMessage,
+      specialistInputs: currentSpecialistInputs,
+      deliverableOutline: workPlan.deliverableOutline,
+      apiKey,
+      onThinking,
+      onStream,
+    });
+
+    const timestamp = new Date().toISOString().split('T')[0];
+    const teamCredits = `\n\n---\n\n_**Team:** ${fullLead.name} (Lead)${fullSelectedSpecialists.length > 0 ? ', ' + fullSelectedSpecialists.map((s) => s.name).join(', ') : ''} | ${timestamp}_`;
+
+    const formattedResponse = finalDeliverable + teamCredits;
+
+    if (onStream) {
+      onStream(teamCredits);
+    }
+
+    logger.info(
+      `[resumeOrchestration] Completed after action plan approval with ${fullSelectedSpecialists.length + 1} contributors`,
+    );
+
+    return {
+      success: true,
+      waitingForInput: false,
+      responses: currentResponses,
+      formattedResponse,
+      selectedAgents: [fullLead, ...fullSelectedSpecialists].map((a) => ({
+        id: a.agentId,
+        name: a.name,
+        role: a.role,
+      })),
+      workPlan,
+    };
+  }
+
+  // Standard resumption after specialist question
+  logger.info(
+    `[resumeOrchestration] Resuming from specialist ${stoppedAtSpecialistIndex}, ${specialistInputs.length} inputs accumulated`,
+  );
 
   // Resume from where we stopped
   let currentSpecialistInputs = [...specialistInputs];
@@ -1896,226 +2182,90 @@ const orchestrateTeamResponse = async ({
         response: workPlan.analysis,
       });
 
-    // PHASE 2: Execute Selected Specialists
+    // Get selected specialists
     const selectedIndices = workPlan.selectedSpecialists || [];
     const selectedSpecialists = selectedIndices.map((idx) => specialists[idx - 1]).filter(Boolean);
 
     logger.info(`[orchestrateTeamResponse] Selected ${selectedSpecialists.length} specialists`);
 
-    const specialistInputs = [];
-    let pendingUserQuestion = null;
-    let stoppedAtSpecialistIndex = -1;
+    // GATE 3: Action Plan Approval
+    // Generate action plan and request user approval before proceeding
+    logger.info(`[orchestrateTeamResponse] Generating Action Plan for user approval`);
 
-    // Execute specialists in a collaborative chain - each sees previous contributions
-    for (let i = 0; i < selectedSpecialists.length; i++) {
-      const specialist = selectedSpecialists[i];
-      if (onAgentStart) onAgentStart(specialist);
-
-      const idx = specialists.indexOf(specialist) + 1;
-      const assignment =
-        workPlan.assignments?.[idx.toString()] || workPlan.assignments?.[idx] || '';
-
-      // Pass previous contributions, all context, and available specialists for collaboration
-      const specialistResult = await executeSpecialist({
-        agent: specialist,
-        assignment,
-        userMessage,
-        apiKey,
-        onThinking,
-        previousContributions: [...specialistInputs], // Clone to avoid mutation issues
-        conversationHistory,
-        fileContext,
-        knowledgeContext,
-        availableSpecialists: selectedSpecialists, // Enable tool-based colleague queries
-      });
-
-      // Check if specialist has a pending critical question
-      if (specialistResult.pendingQuestion) {
-        logger.info(
-          `[orchestrateTeamResponse] ${specialist.name} has pending CRITICAL question - stopping orchestration`,
-        );
-        pendingUserQuestion = specialistResult.pendingQuestion;
-        stoppedAtSpecialistIndex = i;
-
-        // Add partial response to inputs if any
-        if (specialistResult.response) {
-          specialistInputs.push({
-            name: specialist.name,
-            role: specialist.role,
-            response: specialistResult.response,
-            hasPendingQuestion: true,
-          });
-        }
-
-        break; // Stop the specialist loop
-      }
-
-      specialistInputs.push({
-        name: specialist.name,
-        role: specialist.role,
-        response: specialistResult.response,
-      });
-
-      responses.push({
-        agentId: specialist.agentId,
-        agentName: specialist.name,
-        agentRole: specialist.role,
-        response: specialistResult.response,
-      });
-
-      if (onAgentComplete)
-        onAgentComplete({
-          agentName: specialist.name,
-          agentRole: specialist.role,
-          response: specialistResult.response,
-        });
-
-      logger.info(
-        `[orchestrateTeamResponse] Specialist ${i + 1}/${selectedSpecialists.length} (${specialist.name}) completed. Chain progress: ${specialistInputs.length} contributions accumulated.`,
-      );
-
-      // Executive Status Update every 2-3 specialist completions
-      // Provides status updates as required by the collaboration protocol
-      const shouldProvideStatusUpdate = (i + 1) % 3 === 0 && i + 1 < selectedSpecialists.length;
-      if (shouldProvideStatusUpdate && onThinking) {
-        const completedNames = specialistInputs.map((s) => s.name).join(', ');
-        const nextSpecialists = selectedSpecialists
-          .slice(i + 1, i + 3)
-          .map((s) => s.role)
-          .join(', ');
-
-        const statusUpdate = `**EXECUTIVE STATUS UPDATE**\n\n"${lead.name} here—quick status. The team is hitting their stride. ${specialist.name} just wrapped up their analysis${specialistInputs.length > 1 ? `, building on work from ${completedNames}` : ''}. ${nextSpecialists ? `More coming in now from ${nextSpecialists}.` : 'Moving toward synthesis.'}"`;
-
-        onThinking({
-          agent: lead.name,
-          role: lead.role || 'Project Lead',
-          action: 'collaboration',
-          message: `Executive status update from ${lead.name}`,
-          collaboration: statusUpdate,
-        });
-      }
-    }
-
-    // If there's a pending critical question, save state and return question
-    if (pendingUserQuestion) {
-      logger.info(
-        `[orchestrateTeamResponse] Returning pending question to user from ${pendingUserQuestion.agent}`,
-      );
-
-      // Save orchestration state for resumption
-      if (conversationId) {
-        const stateToSave = {
-          workPlan,
-          specialistInputs,
-          responses,
-          selectedSpecialists: selectedSpecialists.map((s) => ({
-            name: s.name,
-            role: s.role,
-            agentId: s.agentId,
-            tier: s.tier,
-            instructions: s.instructions,
-            expertise: s.expertise,
-            responsibilities: s.responsibilities,
-            model: s.model,
-          })),
-          stoppedAtSpecialistIndex,
-          pendingQuestion: pendingUserQuestion,
-          lead: {
-            name: lead.name,
-            role: lead.role,
-            agentId: lead.agentId,
-            tier: lead.tier,
-            instructions: lead.instructions,
-          },
-          originalUserMessage: userMessage,
-        };
-        saveOrchestrationState(conversationId, stateToSave);
-      }
-
-      // Format the question for display
-      const optionsArray = Array.isArray(pendingUserQuestion.options)
-        ? pendingUserQuestion.options
-        : [];
-      const optionsText =
-        optionsArray.length > 0
-          ? '\n\n**Options:**\n' + optionsArray.map((o, i) => `${i + 1}. ${o}`).join('\n')
-          : '';
-
-      const questionMessage = `**${pendingUserQuestion.agent}** (${pendingUserQuestion.agentRole}) needs clarification before proceeding:
-
----
-
-${pendingUserQuestion.question}${optionsText}
-
----
-
-_Please respond to continue the analysis._`;
-
-      // Stream the question to the user incrementally
-      if (onStream) {
-        await streamTextIncrementally(questionMessage, onStream);
-      }
-
-      return {
-        success: true,
-        waitingForInput: true,
-        pendingQuestion: pendingUserQuestion,
-        responses,
-        specialistInputs,
-        stoppedAtSpecialistIndex,
-        selectedSpecialists: selectedSpecialists.map((s) => s.name),
-        workPlan,
-        formattedResponse: questionMessage,
-        selectedAgents: [lead, ...selectedSpecialists.slice(0, stoppedAtSpecialistIndex + 1)].map(
-          (a) => ({
-            id: a.agentId,
-            name: a.name,
-            role: a.role,
-          }),
-        ),
-      };
-    }
-
-    // PHASE 3: Synthesize with STREAMING (only if no pending questions)
-    if (onAgentStart) onAgentStart({ ...lead, phase: 'synthesis' });
-
-    const finalDeliverable = await synthesizeDeliverableStreaming({
+    const { actionPlanText, pendingQuestion } = await generateActionPlanWithApproval({
       lead,
+      workPlan,
+      selectedSpecialists,
       userMessage,
-      specialistInputs,
-      deliverableOutline: workPlan.deliverableOutline,
       apiKey,
-      onThinking,
       onStream,
+      onThinking,
     });
 
-    // Add team credits
-    const timestamp = new Date().toISOString().split('T')[0];
-    const teamCredits = `\n\n---\n\n_**Team:** ${lead.name} (Lead)${selectedSpecialists.length > 0 ? ', ' + selectedSpecialists.map((s) => s.name).join(', ') : ''} | ${timestamp}_`;
-
-    const formattedResponse = finalDeliverable + teamCredits;
-
-    // Stream the credits
-    if (onStream) {
-      onStream(teamCredits);
+    // Save state for resumption after user approves
+    if (conversationId) {
+      const stateToSave = {
+        workPlan,
+        specialistInputs: [],
+        responses: [],
+        selectedSpecialists: selectedSpecialists.map((s) => ({
+          name: s.name,
+          role: s.role,
+          agentId: s.agentId,
+          tier: s.tier,
+          instructions: s.instructions,
+          expertise: s.expertise,
+          responsibilities: s.responsibilities,
+          model: s.model,
+        })),
+        stoppedAtSpecialistIndex: -1, // Not started yet
+        pendingQuestion,
+        lead: {
+          name: lead.name,
+          role: lead.role,
+          agentId: lead.agentId,
+          tier: lead.tier,
+          instructions: lead.instructions,
+          model: lead.model,
+        },
+        originalUserMessage: userMessage,
+        waitingForActionPlanApproval: true, // Flag for action plan approval
+      };
+      saveOrchestrationState(conversationId, stateToSave);
     }
 
-    logger.info(
-      `[orchestrateTeamResponse] Completed with ${selectedSpecialists.length + 1} contributors`,
-    );
+    // Format the approval request
+    const optionsText = pendingQuestion.options?.length > 0
+      ? '\n\n**Options:**\n' + pendingQuestion.options.map((o, i) => `${i + 1}. ${o}`).join('\n')
+      : '';
+
+    const approvalMessage = `\n\n---\n\n**${pendingQuestion.agent}** (${pendingQuestion.agentRole}):
+
+${pendingQuestion.question}${optionsText}
+
+---
+
+_Please respond to proceed._`;
+
+    // Stream the approval request
+    if (onStream) {
+      await streamTextIncrementally(approvalMessage, onStream);
+    }
 
     return {
       success: true,
-      waitingForInput: false,
-      responses,
-      formattedResponse,
+      waitingForInput: true,
+      waitingForActionPlanApproval: true,
+      pendingQuestion,
+      responses: [],
+      formattedResponse: actionPlanText + approvalMessage,
       selectedAgents: [lead, ...selectedSpecialists].map((a) => ({
         id: a.agentId,
         name: a.name,
         role: a.role,
       })),
-      workPlan,
     };
+    // Note: PHASE 2 (specialists) and PHASE 3 (synthesis) happen in resumeOrchestration after user approves
   } catch (error) {
     logger.error('[orchestrateTeamResponse] Error:', error);
     return {
