@@ -557,47 +557,18 @@ const resumeOrchestration = async ({
 
       // Check for recursive pause
       if (specialistResponse && specialistResponse.status === 'PAUSED') {
-        // Save state and return pause
-        // ... (simplified reuse of saving logic needed here ideally, but for now we assume one step or manual fix)
-        // Let's implement basic save for recursive pause
-        const newSpecialistStates = [];
-        // Add completed
-        specialistInputs.forEach((input) => {
-          newSpecialistStates.push({
-            agentName: input.name,
-            status: 'COMPLETED',
-            messages: [],
-            currentOutput: input.response,
-          });
-        });
-        // Add this new paused one
-        newSpecialistStates.push({
-          agentName: specialist.name,
-          status: 'PAUSED',
-          messages: specialistResponse.messages,
-          interruptQuestion: specialistResponse.question,
-        });
-        // Add pending
         const futureSpecialists = specialists.slice(specialists.indexOf(specialist) + 1);
-        futureSpecialists.forEach((s) => {
-          newSpecialistStates.push({
-            agentName: s.name,
-            status: 'PENDING',
-            messages: [],
-            currentOutput: '',
-          });
-        });
 
-        await saveOrchestrationState({
+        return await persistTeamState({
           conversationId,
           parentMessageId: state.parentMessageId,
-          status: 'PAUSED',
           leadPlan,
-          specialistStates: newSpecialistStates,
+          specialistInputs,
+          activeAgent: specialist,
+          activeAgentResponse: specialistResponse,
+          pendingAgents: futureSpecialists,
           sharedContext,
         });
-
-        return { success: true, isPaused: true, message: specialistResponse.question };
       }
 
       specialistInputs.push({
@@ -632,43 +603,19 @@ const resumeOrchestration = async ({
         conversationId,
       });
 
-      // Check for pause
       if (specialistResponse && specialistResponse.status === 'PAUSED') {
-        const newSpecialistStates = [];
-        specialistInputs.forEach((input) => {
-          newSpecialistStates.push({
-            agentName: input.name,
-            status: 'COMPLETED',
-            messages: [],
-            currentOutput: input.response,
-          });
-        });
-        newSpecialistStates.push({
-          agentName: specialist.name,
-          status: 'PAUSED',
-          messages: specialistResponse.messages,
-          interruptQuestion: specialistResponse.question,
-        });
         const futureSpecialists = specialists.slice(specialists.indexOf(specialist) + 1);
-        futureSpecialists.forEach((s) => {
-          newSpecialistStates.push({
-            agentName: s.name,
-            status: 'PENDING',
-            messages: [],
-            currentOutput: '',
-          });
-        });
 
-        await saveOrchestrationState({
+        return await persistTeamState({
           conversationId,
           parentMessageId: state.parentMessageId,
-          status: 'PAUSED',
           leadPlan,
-          specialistStates: newSpecialistStates,
+          specialistInputs,
+          activeAgent: specialist,
+          activeAgentResponse: specialistResponse,
+          pendingAgents: futureSpecialists,
           sharedContext,
         });
-
-        return { success: true, isPaused: true, message: specialistResponse.question };
       }
 
       specialistInputs.push({
@@ -799,55 +746,23 @@ const orchestrateTeamResponse = async ({
 
       // Handle Pause
       if (specialistResponse && specialistResponse.status === 'PAUSED') {
-        logger.info(`[orchestrateTeamResponse] Orchestration PAUSED by ${specialist.name}`);
-
-        // Save state to DB
-        const specialistStates = [];
-
-        // Add already completed specialists
-        specialistInputs.forEach((input) => {
-          specialistStates.push({
-            agentName: input.name,
-            status: 'COMPLETED',
-            messages: input.messages || [], // Persist history
-            currentOutput: input.response,
-          });
-        });
-
-        // Add the paused specialist
-        specialistStates.push({
-          agentName: specialist.name,
-          status: 'PAUSED',
-          messages: specialistResponse.messages,
-          interruptQuestion: specialistResponse.question,
-        });
-
-        // Add pending specialists
         const remainingSpecialists = selectedSpecialists.slice(
           selectedSpecialists.indexOf(specialist) + 1,
         );
-        remainingSpecialists.forEach((s) => {
-          specialistStates.push({
-            agentName: s.name,
-            status: 'PENDING',
-            messages: [],
-            currentOutput: '',
-          });
-        });
 
-        await saveOrchestrationState({
+        const savedResult = await persistTeamState({
           conversationId,
-          parentMessageId: parentMessageId,
-          status: 'PAUSED',
+          parentMessageId,
           leadPlan: workPlan,
-          specialistStates,
+          specialistInputs,
+          activeAgent: specialist,
+          activeAgentResponse: specialistResponse,
+          pendingAgents: remainingSpecialists,
           sharedContext: workPlan.sharedContext,
         });
 
         return {
-          success: true,
-          isPaused: true,
-          message: specialistResponse.question,
+          ...savedResult,
           responses,
         };
       }
@@ -922,6 +837,68 @@ const orchestrateTeamResponse = async ({
       responses: [],
     };
   }
+};
+
+/**
+ * Helper to construct and save the paused orchestration state.
+ * Reduces duplication across initial execution and resumption flows.
+ */
+const persistTeamState = async ({
+  conversationId,
+  parentMessageId,
+  leadPlan,
+  specialistInputs,
+  activeAgent,
+  activeAgentResponse,
+  pendingAgents,
+  sharedContext,
+}) => {
+  logger.info(`[persistTeamState] Pausing orchestration for ${activeAgent.name}`);
+
+  const specialistStates = [];
+
+  // Add already completed specialists
+  specialistInputs.forEach((input) => {
+    specialistStates.push({
+      agentName: input.name,
+      status: 'COMPLETED',
+      messages: input.messages || [], // Persist history
+      currentOutput: input.response,
+    });
+  });
+
+  // Add the currently paused specialist
+  specialistStates.push({
+    agentName: activeAgent.name,
+    status: 'PAUSED',
+    messages: activeAgentResponse.messages || [],
+    interruptQuestion: activeAgentResponse.question,
+  });
+
+  // Add pending specialists
+  pendingAgents.forEach((s) => {
+    specialistStates.push({
+      agentName: s.name,
+      status: 'PENDING',
+      messages: [],
+      currentOutput: '',
+    });
+  });
+
+  await saveOrchestrationState({
+    conversationId,
+    parentMessageId,
+    status: 'PAUSED',
+    leadPlan,
+    specialistStates,
+    sharedContext,
+  });
+
+  return {
+    success: true,
+    isPaused: true,
+    message: activeAgentResponse.question,
+  };
 };
 
 const shouldUseTeamOrchestration = (conversation) => {
