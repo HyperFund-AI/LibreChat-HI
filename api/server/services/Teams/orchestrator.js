@@ -295,7 +295,7 @@ This is a NON-NEGOTIABLE debug requirement. If you write OUTPUT, you have FAILED
 
       // Try to extract thinking section as it streams
       const thinkingMatch = accumulatedText.match(/<THINKING>([\s\S]*?)(?:<\/THINKING>|$)/i);
-      if (thinkingMatch && thinkingMatch[1]) {
+      if (thinkingMatch?.[1]) {
         const currentThinking = thinkingMatch[1].trim();
         // Update UI if we have new thinking content of significance
         if (currentThinking.length > lastThinkingSent.length + 50 || chunkCount % 10 === 0) {
@@ -350,7 +350,13 @@ This is a NON-NEGOTIABLE debug requirement. If you write OUTPUT, you have FAILED
   const finalOutputMatch = finalFullText.match(/<OUTPUT>([\s\S]*?)<\/OUTPUT>/i);
 
   if (finalThinkingMatch) {
-    thinkingText = finalThinkingMatch[1].trim();
+    const newThinking = finalThinkingMatch[1].trim();
+    // Append to existing thinking (multi-turn accumulation)
+    if (thinkingText && newThinking) {
+      thinkingText = thinkingText + '\n\n---\n\n' + newThinking;
+    } else {
+      thinkingText = newThinking;
+    }
   }
   if (finalOutputMatch) {
     outputText = finalOutputMatch[1].trim();
@@ -610,6 +616,11 @@ const resumeOrchestration = async ({
   // Find the paused agent state
   const pausedState = specialistStates.find((s) => s.status === 'PAUSED');
 
+  // Load thinking from the paused specialist (their pre-pause thinking)
+  if (pausedState?.thinking) {
+    teamThinking[pausedState.agentName] = pausedState.thinking;
+  }
+
   // Determine starting index (resume from paused, or start of pending if logic changes)
   let startIndex = 0;
   if (pausedState) {
@@ -708,6 +719,14 @@ const resumeOrchestration = async ({
       if (specialistResponse && specialistResponse.status === 'PAUSED') {
         const futureSpecialists = specialists.slice(specialists.indexOf(specialist) + 1);
 
+        // Merge thinking: existing + new (if both exist)
+        const existingThinking = teamThinking[specialist.name] || '';
+        const newThinking = specialistResponse.thinking || '';
+        const mergedThinking =
+          existingThinking && newThinking
+            ? `${existingThinking}\n\n---\n\n${newThinking}`
+            : existingThinking || newThinking;
+
         return await persistTeamState({
           conversationId,
           parentMessageId: state.parentMessageId,
@@ -720,7 +739,7 @@ const resumeOrchestration = async ({
           leadAgent: lead,
           allSpecialists: specialists,
           pausedMessageId: responseMessageId,
-          thinking: { ...teamThinking, [specialist.name]: specialistResponse.thinking },
+          thinking: { ...teamThinking, [specialist.name]: mergedThinking },
         });
       }
 
@@ -764,6 +783,14 @@ const resumeOrchestration = async ({
       if (specialistResponse && specialistResponse.status === 'PAUSED') {
         const futureSpecialists = specialists.slice(specialists.indexOf(specialist) + 1);
 
+        // Merge thinking: existing + new (if both exist)
+        const existingThinking = teamThinking[specialist.name] || '';
+        const newThinking = specialistResponse.thinking || '';
+        const mergedThinking =
+          existingThinking && newThinking
+            ? `${existingThinking}\n\n---\n\n${newThinking}`
+            : existingThinking || newThinking;
+
         return await persistTeamState({
           conversationId,
           parentMessageId: state.parentMessageId,
@@ -776,7 +803,7 @@ const resumeOrchestration = async ({
           leadAgent: lead,
           allSpecialists: specialists,
           pausedMessageId: responseMessageId,
-          thinking: { ...teamThinking, [specialist.name]: specialistResponse.thinking },
+          thinking: { ...teamThinking, [specialist.name]: mergedThinking },
         });
       }
 
@@ -815,7 +842,7 @@ const resumeOrchestration = async ({
   });
 
   const timestamp = new Date().toISOString().split('T')[0];
-  const teamCredits = `\n\n---\n\n_**Team:** ${lead.name} (Lead)${specialists.length > 0 ? ', ' + specialists.map((s) => s.name).join(', ') : ''} | ${timestamp}_`;
+  const teamCredits = `\n\n---\n\n_**Team:** ${lead.name} (Lead)${specialists.length > 0 ? `, ${specialists.map((s) => s.name).join(', ')}` : ''} | ${timestamp}_`;
   const formattedResponse = finalDeliverable + teamCredits;
 
   if (onStream) onStream(teamCredits);
@@ -862,7 +889,7 @@ const orchestrateTeamResponse = async ({
 
     // Include knowledge context in the message if available
     let enrichedMessage = userMessage;
-    if (knowledgeContext && knowledgeContext.trim()) {
+    if (knowledgeContext?.trim()) {
       logger.info('[orchestrateTeamResponse] Injecting team knowledge context');
       enrichedMessage = `${userMessage}\n\n${knowledgeContext}`;
     }
