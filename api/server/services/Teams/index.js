@@ -18,7 +18,7 @@ const {
   mergeTeamMembers,
   DR_STERLING_AGENT_ID,
 } = require('./drSterlingAgent');
-const { extractTeamCompositionWithLLM, validateAndEnhanceTeam } = require('./extractTeamWithLLM');
+const { extractTeamCompositionWithLLM, validateAndEnhanceTeam, checkUserConfirmation } = require('./extractTeamWithLLM');
 const {
   executeLeadAnalysis,
   executeSpecialist,
@@ -49,6 +49,7 @@ module.exports = {
   // LLM-based extraction
   extractTeamCompositionWithLLM,
   validateAndEnhanceTeam,
+  checkUserConfirmation,
 
   // Team Orchestration
   executeLeadAnalysis,
