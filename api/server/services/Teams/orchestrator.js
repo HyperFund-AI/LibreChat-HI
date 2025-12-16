@@ -386,20 +386,33 @@ Your expertise: ${colleague.expertise || colleague.responsibilities || 'Speciali
 
 A colleague (${requestingAgent.name}, ${requestingAgent.role}) is asking you a direct question during a team collaboration.
 
-IMPORTANT: Structure your response with a COLLABORATION_CONVO section that will be shown to stakeholders:
+IMPORTANT: Structure your response with a COLLABORATION_CONVO section that will be shown to stakeholders.
+
+## REQUIRED DIALOGUE FORMAT
+
+All your dialogue MUST follow this exact format:
+
+**[Your Full Name, Credentials] — [Your Title]**
+
+"[Your dialogue content - conversational, addressing colleague by name, with specific data/facts]"
 
 <COLLABORATION_CONVO>
-Respond conversationally as if speaking directly to ${requestingAgent.name} in a team meeting.
-Address them by name, provide your expert input, and be specific with data/facts.
-Example tone: "${requestingAgent.name}, here's what I'm finding in my analysis..."
+**${colleague.name}${colleague.credentials ? `, ${colleague.credentials}` : ''} — ${colleague.role}**
+
+"${requestingAgent.name}, [your response here - be conversational, specific, and data-driven]"
 </COLLABORATION_CONVO>
 
-Guidelines:
+## EXAMPLE FORMAT:
+**Thomas Blackwood, PE — Engineering Technical Lead**
+
+Patricia, hold on—what species are we dealing with? That's going to affect our route flexibility options. If it's desert tortoise or sage grouse, we've got established mitigation playbooks.
+
+## GUIDELINES:
 - Address ${requestingAgent.name} directly by name
-- Be conversational but professional
-- Provide specific data/facts where relevant
+- Be conversational but professional - like speaking in a real team meeting
+- Provide specific data, percentages, timeframes where relevant
 - Keep response focused (100-200 words)
-- Make it clear this is a team dialogue`;
+- Show genuine expertise and collaborative problem-solving`;
 
   const client = new Anthropic({ apiKey });
 
@@ -673,18 +686,30 @@ Your internal reasoning process. Brief notes on your approach and key considerat
 </THINKING>
 
 <COLLABORATION_CONVO>
-This is the TEAM CONVERSATION that will be shown to stakeholders. Write as if speaking in a real team meeting:
+This is the TEAM CONVERSATION shown to stakeholders. You MUST use this exact dialogue format:
+
+**[Your Full Name, Credentials] — [Your Title]**
+
+"[Your dialogue - conversational, addressing colleagues by name, with specific data/facts]"
+
+## YOUR HEADER:
+**${agent.name}${agent.credentials ? `, ${agent.credentials}` : ''} — ${agent.role}**
+
+## WHAT TO INCLUDE:
 ${previousContributions.length > 0 ? `
-- Address colleagues by name when building on their work (e.g., "${availableSpecialists[0]?.name || 'Marcus'}, I need to flag something that's developing...")
-- Reference specific findings from previous specialists (e.g., "That's exactly what I've been researching, and it's telling a clear story...")
-- Provide data points other specialists can use (e.g., "Kevin, for your risk model—here are the probability distributions: ...")
-- Flag implications for the project (e.g., "This moves tribal consultation from a line item to the critical path")
+- Address colleagues by name when building on their work (e.g., "${availableSpecialists[0]?.name || 'Marcus'}, I need to flag something...")
+- Reference specific findings from previous specialists
+- Provide data points other specialists can use
+- Flag implications for the project
 - Ask clarifying questions if you need input from another domain
 ` : `- Introduce your initial findings to the team
 - Flag what you're discovering and why it matters
 - Indicate what you'll be investigating`}
 
-Example tone: "Marcus, I need to flag something. I've been mapping the tribal landscape, and the two nations with territorial claims along this corridor—this isn't a routine consultation situation. I'm finding significant cultural resource sensitivity that I don't think the current project plan accounts for."
+## EXAMPLE DIALOGUE FORMAT:
+**Thomas Blackwood, PE — Engineering Technical Lead**
+
+"Patricia, hold on—what species are we dealing with? That's going to affect our route flexibility options. If it's desert tortoise or sage grouse, we've got established mitigation playbooks. Something more constrained could change the engineering calculus significantly."
 </COLLABORATION_CONVO>
 
 <OUTPUT>
@@ -693,12 +718,12 @@ Your final expert analysis in bullet points. Be specific with data, percentages,
 
 ${colleagueNames ? `Your colleagues on this project: ${colleagueNames}` : ''}
 
-Guidelines:
-- COLLABORATION_CONVO is the conversational team dialogue (visible to user)
-- THINKING is your private reasoning (also visible but secondary)
-- OUTPUT is your structured analysis
-- Be specific and data-driven throughout
-- Keep each section focused and purposeful
+## CRITICAL REQUIREMENTS:
+- COLLABORATION_CONVO: Use the **[Name, Credentials] — [Title]** header format with quoted dialogue
+- The collaboration is the demo's primary differentiator — make it natural and engaging
+- THINKING: Your private reasoning (visible but secondary)
+- OUTPUT: Your structured analysis with specific data points
+- Be conversational but professional throughout
 ${collaborationGuidelines}${toolInstructions}`;
 
   const client = new Anthropic({ apiKey });
@@ -931,10 +956,14 @@ Since this is marked as "${toolInput.importance}" (not critical), please proceed
       const colleague = findColleague(toolInput.colleague_role, availableSpecialists, agent);
       const colleagueName = colleague ? colleague.name : toolInput.colleague_role;
 
-      // Stream the question as a collaboration event so users see the dialogue
-      const questionText = toolInput.context
-        ? `${colleagueName}, ${toolInput.question}\n\n_Context: ${toolInput.context}_`
-        : `${colleagueName}, ${toolInput.question}`;
+      // Build the formatted dialogue using the required format:
+      // **[Full Name, Credentials] — [Title]**
+      // "[Dialogue content]"
+      const agentHeader = `**${agent.name}${agent.credentials ? `, ${agent.credentials}` : ''} — ${agent.role}**`;
+      const dialogueContent = toolInput.context
+        ? `"${colleagueName}, ${toolInput.question}"\n\n_Context: ${toolInput.context}_`
+        : `"${colleagueName}, ${toolInput.question}"`;
+      const questionText = `${agentHeader}\n\n${dialogueContent}`;
 
       if (onThinking) {
         // First show the question being asked (as collaboration from requesting agent)
@@ -942,7 +971,7 @@ Since this is marked as "${toolInput.importance}" (not critical), please proceed
           agent: agent.name,
           role: agent.role,
           action: 'collaboration',
-          message: questionText.substring(0, 150) + (questionText.length > 150 ? '...' : ''),
+          message: `Asking ${colleagueName}: ${toolInput.question.substring(0, 100)}...`,
           collaboration: questionText,
         });
       }
@@ -1833,6 +1862,27 @@ const orchestrateTeamResponse = async ({
       logger.info(
         `[orchestrateTeamResponse] Specialist ${i + 1}/${selectedSpecialists.length} (${specialist.name}) completed. Chain progress: ${specialistInputs.length} contributions accumulated.`,
       );
+
+      // Executive Status Update every 2-3 specialist completions
+      // Provides status updates as required by the collaboration protocol
+      const shouldProvideStatusUpdate = (i + 1) % 3 === 0 && i + 1 < selectedSpecialists.length;
+      if (shouldProvideStatusUpdate && onThinking) {
+        const completedNames = specialistInputs.map((s) => s.name).join(', ');
+        const nextSpecialists = selectedSpecialists
+          .slice(i + 1, i + 3)
+          .map((s) => s.role)
+          .join(', ');
+
+        const statusUpdate = `**EXECUTIVE STATUS UPDATE**\n\n"${lead.name} here—quick status. The team is hitting their stride. ${specialist.name} just wrapped up their analysis${specialistInputs.length > 1 ? `, building on work from ${completedNames}` : ''}. ${nextSpecialists ? `More coming in now from ${nextSpecialists}.` : 'Moving toward synthesis.'}"`;
+
+        onThinking({
+          agent: lead.name,
+          role: lead.role || 'Project Lead',
+          action: 'collaboration',
+          message: `Executive status update from ${lead.name}`,
+          collaboration: statusUpdate,
+        });
+      }
     }
 
     // If there's a pending critical question, save state and return question
