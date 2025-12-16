@@ -4,6 +4,33 @@ const { z } = require('zod');
 const { logger } = require('@librechat/data-schemas');
 const Anthropic = require('@anthropic-ai/sdk');
 
+const energySectorContext = `
+## ENERGY SECTOR CONTEXT (Apply when relevant)
+
+If the work involves energy, utilities, or infrastructure sectors:
+
+### Domain Expertise Signals
+Demonstrate deep sector knowledge through:
+- Accurate regulatory terminology (FERC, NEPA, CPUC, PTC, ROD, EIS)
+- Understanding of permitting complexity and timelines
+- Knowledge of stakeholder dynamics (tribal nations, environmental groups, ratepayer advocates)
+- Financial acumen (WACC, carrying costs, rate recovery, capital authorization)
+
+### Capability Reference (NO CLIENT NAMES)
+When referencing past work or capabilities, use ONLY generic references:
+- "Major Western utilities"
+- "Fortune 500 energy companies"
+- "Leading engineering firms"
+- "Infrastructure-focused organizations"
+
+╔═══════════════════════════════════════════════════════════════════╗
+║  NEVER mention: SDG&E, Xcel, Jacobs, Heartland, or any other     ║
+║  specific client names. Use generic references only.              ║
+╚═══════════════════════════════════════════════════════════════════╝
+`
+
+
+
 const ORCHESTRATOR_ANTHROPIC_MODEL = 'claude-sonnet-4-5';
 
 /**
@@ -145,7 +172,7 @@ const ASK_USER_TOOL = {
         type: 'string',
         enum: ['critical', 'important', 'helpful'],
         description:
-          'How important is this information? "critical" = cannot proceed without it, "important" = significantly affects quality, "helpful" = would improve but not essential.',
+          'How important is this information? "critical" = STOPS for user response, cannot proceed without it. "important" = STOPS for user response, significantly affects quality. "helpful" = proceed with assumptions, would improve but not essential.',
       },
     },
     required: ['question', 'importance'],
@@ -390,29 +417,30 @@ IMPORTANT: Structure your response with a COLLABORATION_CONVO section that will 
 
 ## REQUIRED DIALOGUE FORMAT
 
-All your dialogue MUST follow this exact format:
-
+<COLLABORATION_CONVO>
 **[Your Full Name, Credentials] — [Your Title]**
 
-"[Your dialogue content - conversational, addressing colleague by name, with specific data/facts]"
-
-<COLLABORATION_CONVO>
-**${colleague.name}${colleague.credentials ? `, ${colleague.credentials}` : ''} — ${colleague.role}**
-
-"${requestingAgent.name}, [your response here - be conversational, specific, and data-driven]"
+[Your dialogue - NO quote marks, conversational, addressing colleague by name]
 </COLLABORATION_CONVO>
 
-## EXAMPLE FORMAT:
+## EXAMPLE (follow this exactly):
+<COLLABORATION_CONVO>
 **Thomas Blackwood, PE — Engineering Technical Lead**
 
 Patricia, hold on—what species are we dealing with? That's going to affect our route flexibility options. If it's desert tortoise or sage grouse, we've got established mitigation playbooks.
+</COLLABORATION_CONVO>
 
-## GUIDELINES:
+## STRICT GUIDELINES:
+- **WORD LIMIT: 100-200 words MAXIMUM** - Be concise like a real meeting exchange
+- NO quote marks around dialogue - write naturally
 - Address ${requestingAgent.name} directly by name
-- Be conversational but professional - like speaking in a real team meeting
-- Provide specific data, percentages, timeframes where relevant
-- Keep response focused (100-200 words)
-- Show genuine expertise and collaborative problem-solving`;
+- Be conversational but professional
+- Provide 1-2 specific data points, not exhaustive lists
+- One focused point per response - don't try to cover everything
+
+${energySectorContext}
+
+`;
 
   const client = new Anthropic({ apiKey });
 
@@ -422,7 +450,7 @@ Patricia, hold on—what species are we dealing with? That's going to affect our
 
   const stream = client.messages.stream({
     model: colleague.model || ORCHESTRATOR_ANTHROPIC_MODEL,
-    max_tokens: 800,
+    max_tokens: 1000,
     system: systemPrompt,
     messages: [
       {
@@ -628,14 +656,14 @@ You have access to the 'ask_user_in_conversation' tool to request clarification 
 **How to ask effectively:**
 - Be specific about what you need to know
 - Indicate the importance level:
-  - "critical" = STOPS analysis, question is presented to user, you must wait for their response
-  - "important" = affects quality, proceed with stated assumptions
-  - "helpful" = nice to have, proceed with best judgment
+  - "critical" = STOPS analysis, question is presented to user, you MUST wait for their response
+  - "important" = STOPS analysis, question is presented to user, wait for response (use for significant decisions)
+  - "helpful" = nice to have, proceed with best judgment and stated assumptions
 - Provide options when applicable to guide the user's response
 
 **IMPORTANT behavior:**
-- For "critical" questions: Your OUTPUT must present the question directly to the user and wait for their response. Do NOT make assumptions on critical matters.
-- For "important"/"helpful" questions: Proceed with reasonable assumptions, clearly stated in your output.`;
+- For "critical" or "important" questions: The system will STOP and present your question to the user. Wait for their response before proceeding. Do NOT make assumptions on these matters.
+- For "helpful" questions: Proceed with reasonable assumptions, clearly stated in your output.`;
 
   const colleagueInstructions =
     availableSpecialists.length > 1
@@ -686,30 +714,23 @@ Your internal reasoning process. Brief notes on your approach and key considerat
 </THINKING>
 
 <COLLABORATION_CONVO>
-This is the TEAM CONVERSATION shown to stakeholders. You MUST use this exact dialogue format:
-
-**[Your Full Name, Credentials] — [Your Title]**
-
-"[Your dialogue - conversational, addressing colleagues by name, with specific data/facts]"
-
-## YOUR HEADER:
 **${agent.name}${agent.credentials ? `, ${agent.credentials}` : ''} — ${agent.role}**
 
-## WHAT TO INCLUDE:
-${previousContributions.length > 0 ? `
-- Address colleagues by name when building on their work (e.g., "${availableSpecialists[0]?.name || 'Marcus'}, I need to flag something...")
-- Reference specific findings from previous specialists
-- Provide data points other specialists can use
-- Flag implications for the project
-- Ask clarifying questions if you need input from another domain
-` : `- Introduce your initial findings to the team
-- Flag what you're discovering and why it matters
-- Indicate what you'll be investigating`}
+[Your dialogue here - NO quote marks, conversational, 100-200 words MAX]
+</COLLABORATION_CONVO>
 
-## EXAMPLE DIALOGUE FORMAT:
+**COLLABORATION_CONVO RULES (100-200 words MAXIMUM):**
+- Start with **[Name, Credentials] — [Title]** header
+- NO quote marks around dialogue - write naturally
+- ${previousContributions.length > 0 ? `Address colleagues by name (e.g., "${availableSpecialists[0]?.name || 'Marcus'}, I need to flag something...")` : 'Introduce your findings to the team'}
+- One focused exchange - like a real meeting comment, not a monologue
+- 1-2 specific data points only
+
+## EXAMPLE (follow this format exactly):
+<COLLABORATION_CONVO>
 **Thomas Blackwood, PE — Engineering Technical Lead**
 
-"Patricia, hold on—what species are we dealing with? That's going to affect our route flexibility options. If it's desert tortoise or sage grouse, we've got established mitigation playbooks. Something more constrained could change the engineering calculus significantly."
+Patricia, hold on—what species are we dealing with? That's going to affect our route flexibility options. If it's desert tortoise or sage grouse, we've got established mitigation playbooks. Something more constrained could change the engineering calculus significantly.
 </COLLABORATION_CONVO>
 
 <OUTPUT>
@@ -719,11 +740,10 @@ Your final expert analysis in bullet points. Be specific with data, percentages,
 ${colleagueNames ? `Your colleagues on this project: ${colleagueNames}` : ''}
 
 ## CRITICAL REQUIREMENTS:
-- COLLABORATION_CONVO: Use the **[Name, Credentials] — [Title]** header format with quoted dialogue
-- The collaboration is the demo's primary differentiator — make it natural and engaging
-- THINKING: Your private reasoning (visible but secondary)
-- OUTPUT: Your structured analysis with specific data points
-- Be conversational but professional throughout
+- **COLLABORATION_CONVO: 100-200 words MAX** - concise like a meeting exchange
+- THINKING: Brief internal reasoning
+- OUTPUT: Structured analysis with specific data points
+- Be conversational but professional
 ${collaborationGuidelines}${toolInstructions}`;
 
   const client = new Anthropic({ apiKey });
@@ -922,10 +942,10 @@ ${collaborationGuidelines}${toolInstructions}`;
         ? `\n\nOptions:\n${optionsArray.map((o, i) => `${i + 1}. ${o}`).join('\n')}`
         : '';
 
-      if (toolInput.importance === 'critical') {
-        // For CRITICAL questions, STOP execution and return pending question
+      if (toolInput.importance === 'critical' || toolInput.importance === 'important') {
+        // For CRITICAL or IMPORTANT questions, STOP execution and return pending question
         logger.info(
-          `[executeSpecialist] ${agent.name} has CRITICAL question - halting for user input`,
+          `[executeSpecialist] ${agent.name} has ${toolInput.importance.toUpperCase()} question - halting for user input`,
         );
 
         // Return early with pending question - don't continue the conversation
@@ -936,15 +956,15 @@ ${collaborationGuidelines}${toolInstructions}`;
             agentRole: agent.role,
             question: toolInput.question,
             options: optionsArray,
-            importance: 'critical',
+            importance: toolInput.importance,
             context: toolInput.context,
           },
         };
       } else {
-        // For non-critical questions, proceed with assumptions
+        // For "helpful" questions only, proceed with assumptions
         toolResult = `Your question has been noted: "${toolInput.question}"${optionsText}
 
-Since this is marked as "${toolInput.importance}" (not critical), please proceed with your analysis using reasonable assumptions. Clearly state your assumptions in the output so the user can validate or correct them.`;
+Since this is marked as "helpful" (not critical/important), please proceed with your analysis using reasonable assumptions. Clearly state your assumptions in the output so the user can validate or correct them.`;
       }
     } else if (result.toolUse.name === 'request_from_colleague') {
       // Handle colleague request tool
@@ -1251,6 +1271,8 @@ Create a UNIFIED document that:
 
 Do NOT just combine responses. Write as if one expert authored the entire document.
 
+${energySectorContext}
+
 IMPORTANT OUTPUT FORMAT:
 Your response MUST include:
 1. A brief introductory description (2-4 sentences) explaining what has been prepared and what the document contains. This description should appear BEFORE the artifact.
@@ -1311,7 +1333,7 @@ If there is no deliverable ready - for example, more information from the user w
         onThinking({
           agent: lead.name,
           action: 'continuing',
-          message: `Continuing artifact generation (attempt ${attempts + 1})...`,
+          message: `Continuing deliverable generation...`,
         });
       }
     } else {
