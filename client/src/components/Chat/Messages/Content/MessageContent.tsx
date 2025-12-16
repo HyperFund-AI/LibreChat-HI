@@ -172,6 +172,11 @@ const MessageContent = ({
 
   return (
     <>
+      {!isCreatedByUser &&
+        message.metadata?.teamThinking &&
+        Object.keys(message.metadata.teamThinking).length > 0 && (
+          <TeamThinkingProcess isSubmitting={isSubmitting} message={message} />
+        )}
       {thinkingContent.length > 0 && (
         <Thinking key={`thinking-${messageId}`}>{thinkingContent}</Thinking>
       )}

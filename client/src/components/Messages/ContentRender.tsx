@@ -100,13 +100,13 @@ const ContentRender = memo(
       () =>
         showCardRender && !isLatestMessage
           ? () => {
-              logger.log(
-                'latest_message',
-                `Message Card click: Setting ${msg?.messageId} as latest message`,
-              );
-              logger.dir(msg);
-              setLatestMessage(msg!);
-            }
+            logger.log(
+              'latest_message',
+              `Message Card click: Setting ${msg?.messageId} as latest message`,
+            );
+            logger.dir(msg);
+            setLatestMessage(msg!);
+          }
           : undefined,
       [showCardRender, isLatestMessage, msg, setLatestMessage],
     );
@@ -170,19 +170,12 @@ const ContentRender = memo(
 
           <div className="flex flex-col gap-1">
             <div className="flex max-w-full flex-grow flex-col gap-0">
-              {/* Team thinking process - show ONLY for Team messages while submitting */}
-              <CSSTransition
-                in={
-                  !msg.isCreatedByUser &&
-                  isSubmitting &&
-                  (msg.sender === 'Team' || msg.model === 'team-collaboration')
-                }
-                timeout={300}
-                classNames="team-thinking"
-                unmountOnExit
-              >
-                <TeamThinkingProcess isSubmitting={true} />
-              </CSSTransition>
+              {/* Team thinking process - show if message has teamThinking metadata */}
+              {!msg.isCreatedByUser &&
+                msg.metadata?.teamThinking &&
+                Object.keys(msg.metadata.teamThinking).length > 0 && (
+                  <TeamThinkingProcess isSubmitting={isSubmitting} message={msg} />
+                )}
               <ContentParts
                 edit={edit}
                 isLast={isLast}

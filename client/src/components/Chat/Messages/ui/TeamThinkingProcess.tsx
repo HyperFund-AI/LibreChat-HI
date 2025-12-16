@@ -8,6 +8,7 @@ import { useLocalize } from '~/hooks';
 
 type TeamThinkingProcessProps = {
   isSubmitting?: boolean;
+  message?: any; // TMessage type from librechat-data-provider
 };
 
 // Animated thinking entry component
@@ -83,35 +84,54 @@ const AnimatedThinkingEntry = memo(({ agent, thinking }: { agent: string; thinki
 
 AnimatedThinkingEntry.displayName = 'AnimatedThinkingEntry';
 
-const TeamThinkingProcess = memo(({ isSubmitting }: TeamThinkingProcessProps) => {
+const TeamThinkingProcess = memo(({ isSubmitting, message }: TeamThinkingProcessProps) => {
   const localize = useLocalize();
   const collaboration = useRecoilValue(teamCollaborationAtom);
-  const [isExpanded, setIsExpanded] = useState(true);
 
-  // Get thinking entries directly from agentThinking map
+  // Default to collapsed when showing persisted data
+  const [isExpanded, setIsExpanded] = useState(isSubmitting ?? true);
+
+  // Determine data source: prioritize persisted data for finished messages,
+  // fall back to live atom if still streaming
+  const persistedThinking = message?.metadata?.teamThinking || {};
+  const liveThinking = collaboration.agentThinking || {};
+  const hasPersistedData = Object.keys(persistedThinking).length > 0;
+  const hasLiveData = Object.keys(liveThinking).length > 0;
+
+  // Use persisted data for finished messages (not submitting OR has persisted data)
+  // Use live data only when actively submitting AND we have live data AND no persisted data
+  const thinkingData = (!isSubmitting || hasPersistedData)
+    ? persistedThinking
+    : liveThinking;
+
+  // Get thinking entries from appropriate source
   const thinkingEntries = useMemo(() => {
-    return Object.entries(collaboration.agentThinking)
-      .filter(([, thinking]) => thinking && thinking.trim())
-      .map(([agent, thinking]) => ({ agent, thinking }));
-  }, [collaboration.agentThinking]);
+    return Object.entries(thinkingData)
+      .filter(([, thinking]) => thinking && typeof thinking === 'string' && thinking.trim())
+      .map(([agent, thinking]) => ({ agent, thinking: thinking as string }));
+  }, [thinkingData]);
 
-  // Get current phase info for display
+  // Get current phase info for display (only relevant when submitting)
   const phaseInfo = useMemo(() => {
+    if (!isSubmitting) return { phase: '', currentAgent: '', hasThinking: thinkingEntries.length > 0 };
+
     const { phase, currentAgent } = collaboration;
     return {
       phase,
       currentAgent: currentAgent || '',
       hasThinking: thinkingEntries.length > 0,
     };
-  }, [collaboration, thinkingEntries]);
+  }, [collaboration, thinkingEntries, isSubmitting]);
 
-  // Show if submitting - the component will show waiting state if no collaboration data yet
-  if (!isSubmitting) {
+  // Show if we have any thinking data (live or persisted)
+  if (thinkingEntries.length === 0) {
     return null;
   }
 
-  // Check if we have any collaboration activity
-  const hasCollaborationData = collaboration.isActive || thinkingEntries.length > 0;
+  // Check if we have any collaboration activity (for live mode)
+  const hasCollaborationData = isSubmitting
+    ? (collaboration.isActive || thinkingEntries.length > 0)
+    : thinkingEntries.length > 0;
 
   return (
     <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/5 dark:bg-amber-500/10">
@@ -124,7 +144,9 @@ const TeamThinkingProcess = memo(({ isSubmitting }: TeamThinkingProcessProps) =>
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
             {localize('com_ui_team_thinking_process')}
           </span>
-          <Loader2 className="h-3 w-3 animate-spin text-amber-500" />
+          {isSubmitting && hasLiveData && (
+            <Loader2 className="h-3 w-3 animate-spin text-amber-500" />
+          )}
         </div>
         {isExpanded ? (
           <ChevronUp className="h-4 w-4 text-gray-500" />
