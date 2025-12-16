@@ -160,6 +160,7 @@ export default function useSSE(
             currentAgent: null,
             phase: 'idle',
             agentThinking: {},
+            agentCollaboration: {},
           });
         }, 3000);
 
@@ -214,8 +215,39 @@ export default function useSSE(
               }
             }
 
-            // Update agent thinking map when we receive thinking content (don't store in steps)
+            // Update agent thinking/collaboration maps when we receive content
             const updatedAgentThinking = { ...prev.agentThinking };
+            const updatedAgentCollaboration = { ...prev.agentCollaboration };
+            const collaborationText = eventData.collaboration || '';
+
+            // Handle collaboration events (team conversation)
+            if (collaborationText && action === 'collaboration') {
+              updatedAgentCollaboration[agentName] = collaborationText;
+
+              // For collaboration events, update agentCollaboration AND add to steps (visible to user)
+              const newStep: TeamThinkingStep = {
+                id: v4(),
+                agent: agentName,
+                role: eventData.role || eventData.agentRole || '',
+                action: 'collaboration',
+                message: eventData.message || collaborationText.substring(0, 150),
+                collaboration: collaborationText,
+                timestamp: Date.now(),
+              };
+
+              return {
+                ...prev,
+                isActive: true,
+                conversationId,
+                currentAgent: agentName,
+                phase,
+                steps: [...prev.steps, newStep],
+                agentThinking: updatedAgentThinking,
+                agentCollaboration: updatedAgentCollaboration,
+              };
+            }
+
+            // Handle thinking events (internal reasoning - less prominent)
             if (thinkingText && action === 'thinking') {
               updatedAgentThinking[agentName] = thinkingText;
 
@@ -227,6 +259,7 @@ export default function useSSE(
                 currentAgent: agentName,
                 phase,
                 agentThinking: updatedAgentThinking,
+                agentCollaboration: updatedAgentCollaboration,
               };
             }
 
@@ -249,6 +282,7 @@ export default function useSSE(
               currentAgent: agentName,
               phase,
               agentThinking: updatedAgentThinking,
+              agentCollaboration: updatedAgentCollaboration,
             };
           });
         } else {
@@ -266,6 +300,7 @@ export default function useSSE(
           currentAgent: null,
           phase: 'idle',
           agentThinking: {},
+          agentCollaboration: {},
         });
 
         /* synchronize messages to Assistants API as well as with real DB ID's */

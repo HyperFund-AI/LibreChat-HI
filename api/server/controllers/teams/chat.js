@@ -112,6 +112,7 @@ const teamChatController = async (req, res) => {
       conversationHistory: conversationHistory || [],
       fileContext,
       config: req.config,
+      conversationId, // For state persistence when waiting for user input
       onAgentStart: (agent) => {
         respondingAgents.push(agent);
         sendSSE(res, {
