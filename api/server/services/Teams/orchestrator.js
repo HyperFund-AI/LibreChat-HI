@@ -1306,7 +1306,59 @@ Document contents in markdown
 Only wrap it in the format specified, do not include additional code-tags or other syntax.
 When modifying a deliverable/document make sure the identifier stays the same - it is used to track the document in the system.
 
-If there is no deliverable ready - for example, more information from the user was requested in order to produce it, do not produce an artifact.`;
+If there is no deliverable ready - for example, more information from the user was requested in order to produce it, do not produce an artifact.
+
+======
+
+## Deliverable Structure
+
+The Strategic Intelligence Assessment includes:
+
+1. **Header Block**
+   - Title (e.g., "WESTERN TRANSMISSION INFRASTRUCTURE")
+   - Subtitle: "Strategic Intelligence Assessment"
+   - Prepared by, Project Lead, Date, Classification
+
+2. **Executive Summary**
+   - 2-3 paragraph synthesis
+   - **Bottom Line:** Clear recommendation statement
+
+3. **Key Findings** (exactly 3)
+   - Finding title
+   - 2-3 paragraph analysis with specific data points
+   - Strategic Implication statement
+
+4. **Strategic Recommendations** (exactly 3)
+   - Recommendation title
+   - Action description
+   - Rationale statement
+
+5. **Methodology Note**
+   - Team composition reference
+   - Source count (target: 150+ qualified sources)
+   - QA protocol confirmation
+
+## What Makes a good Deliverable
+
+| Element | Standard | Demonstrated |
+|---------|----------|--------------|
+| **Length** | 2-3 pages | ✅ Each sample ~2.5 pages |
+| **Executive Summary** | Bottom-line upfront | ✅ Clear BLUF in both |
+| **Findings** | 3 maximum, high-impact | ✅ 3 findings each |
+| **Recommendations** | Actionable, specific | ✅ Clear actions with rationale |
+| **Methodology** | Credibility signal | ✅ Source count, QA reference |
+| **Professional Format** | Fortune 500 ready | ✅ Clean structure throughout |
+
+## What to Avoid in Deliverables
+
+| Anti-Pattern | Why It Fails |
+|--------------|--------------|
+| 10+ findings | Overwhelming, suggests padding |
+| Vague recommendations | Doesn't demonstrate actionability |
+| No source reference | Undermines credibility |
+| Excessive length | Risks token limits, loses audience |
+| Generic insights | Doesn't showcase domain expertise |
+`;
 
   const client = new Anthropic({ apiKey });
   let fullText = '';
