@@ -305,7 +305,11 @@ async function handleTeamOrchestration(
         endpoint: 'agents',
         unfinished: false, // It is technically finished as an HTTP request
         error: false,
+        metadata: {
+          teamThinking: orchestrationResult.thinking || {},
+        },
       };
+      logger.info(`[handleTeamOrchestration] Paused - saving with teamThinking:`, JSON.stringify(orchestrationResult.thinking || {}));
       await saveMessage(req, responseMessage, {
         context: 'handleTeamOrchestration - paused response',
       });
@@ -351,7 +355,11 @@ async function handleTeamOrchestration(
       endpoint: 'agents',
       unfinished: false,
       error: !orchestrationResult.success,
+      metadata: {
+        teamThinking: orchestrationResult.thinking || {},
+      },
     };
+    logger.info(`[handleTeamOrchestration] Saving with teamThinking:`, JSON.stringify(orchestrationResult.thinking || {}));
     await saveMessage(req, responseMessage, { context: 'handleTeamOrchestration - team response' });
 
     // Update conversation
@@ -376,6 +384,7 @@ async function handleTeamOrchestration(
     res.end();
     logger.info(`[handleTeamOrchestration] Completed successfully`);
   } catch (error) {
+    console.error('??', error.stack);
     logger.error('[handleTeamOrchestration] Error:', error);
 
     sendEvent(res, {

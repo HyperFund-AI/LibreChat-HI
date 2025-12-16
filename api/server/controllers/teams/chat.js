@@ -172,8 +172,15 @@ const teamChatController = async (req, res) => {
           response: r.response,
         })),
         selectedAgents: orchestrationResult.selectedAgents,
+        teamThinking: orchestrationResult.thinking || {},
       },
     };
+
+    // DEBUG: Log thinking data before save
+    logger.info(
+      `[teamChatController] Saving message with teamThinking:`,
+      JSON.stringify(orchestrationResult.thinking || {}, null, 2),
+    );
 
     // Save response message
     await saveMessage(req, responseMessage, { context: 'teamChatController - team response' });
