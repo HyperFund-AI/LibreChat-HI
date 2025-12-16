@@ -126,24 +126,35 @@ export default function useSSE(
     sse.addEventListener('message', (e: MessageEvent) => {
       const data = JSON.parse(e.data);
 
+      // Debug: log all SSE messages
+      console.log('[SSE RAW] Received message:', {
+        hasEvent: !!data.event,
+        event: data.event,
+        hasFinal: data.final != null,
+        hasCreated: data.created != null,
+      });
+
       if (data.final != null) {
         clearDraft(submission.conversation?.conversationId);
         const { plugins, teamCreated } = data;
 
-        // If team was created by Dr. Sterling, invalidate conversation to refresh team data
+        // If team creation was triggered by Dr. Sterling, invalidate conversation queries
+        // Note: Don't clear isTeamApprovalLoading here - team is still being created in background
+        // The loading state will be cleared by TeamIndicator when hasTeam becomes true
         if (teamCreated && submission.conversation?.conversationId) {
-          // Invalidate conversation queries to refresh team data
-          queryClient.invalidateQueries([
-            QueryKeys.conversation,
-            submission.conversation.conversationId,
-          ]);
-          queryClient.invalidateQueries([
-            QueryKeys.conversation,
-            submission.conversation.conversationId,
-            'team',
-          ]);
-          // Clear team approval loading state
-          setIsTeamApprovalLoading(false);
+          console.log('[SSE] Team creation triggered, will refresh queries after team is created');
+          // Invalidate after a delay to allow team creation to complete
+          setTimeout(() => {
+            queryClient.invalidateQueries([
+              QueryKeys.conversation,
+              submission.conversation?.conversationId,
+            ]);
+            queryClient.invalidateQueries([
+              QueryKeys.conversation,
+              submission.conversation?.conversationId,
+              'team',
+            ]);
+          }, 5000); // 5 second delay to allow LLM extraction to complete
         }
 
         // Mark team collaboration as complete and reset after delay
@@ -186,6 +197,17 @@ export default function useSSE(
 
         createdHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.event != null) {
+        // Log ALL events for debugging
+        console.log('[SSE EVENT] Received event type:', data.event, 'with data:', data.data);
+        
+        // Handle team_creating event from backend - triggers "Creating Team..." modal
+        if (data.event === 'team_creating') {
+          const eventData = data.data || {};
+          console.log('[SSE] 🎉🎉🎉 TEAM_CREATING event received! Setting isTeamApprovalLoading=true', eventData);
+          setIsTeamApprovalLoading(true);
+          console.log('[SSE] ✅ setIsTeamApprovalLoading(true) called');
+        }
+        
         // Handle team collaboration events
         if (
           data.event === 'on_thinking' ||

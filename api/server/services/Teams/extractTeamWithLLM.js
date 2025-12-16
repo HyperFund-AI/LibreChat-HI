@@ -243,7 +243,65 @@ const validateAndEnhanceTeam = (extractedTeam, teamRelatedMessages) => {
   return extractedTeam;
 };
 
+/**
+ * Uses LLM to check if user message is a confirmation to proceed with team creation
+ * @param {string} userMessage - The user's message
+ * @param {string} assistantResponse - Dr. Sterling's response (for context)
+ * @param {string} userId - User ID for API key retrieval
+ * @returns {Promise<boolean>} True if user confirmed team creation
+ */
+const checkUserConfirmation = async (userMessage, assistantResponse, userId) => {
+  try {
+    // Get Anthropic API key
+    const { ANTHROPIC_API_KEY } = process.env;
+    const isUserProvided = ANTHROPIC_API_KEY === 'user_provided';
+    const anthropicApiKey = isUserProvided
+      ? await getUserKey({ userId, name: EModelEndpoint.anthropic })
+      : ANTHROPIC_API_KEY;
+
+    if (!anthropicApiKey) {
+      logger.warn('[checkUserConfirmation] No API key available, falling back to false');
+      return false;
+    }
+
+    const client = new Anthropic({ apiKey: anthropicApiKey });
+
+    const systemPrompt = `You are analyzing a conversation where a user is reviewing a team specification from Dr. Sterling.
+Your task is to determine if the user's message is a CONFIRMATION to proceed with creating the team.
+
+A confirmation means the user is approving/accepting the proposed team and wants to proceed.
+Examples of confirmations: "I confirm", "looks good, proceed", "create the team", "let's go", "approved", "yes, create it"
+Examples of NON-confirmations: "what about X?", "can you change Y?", "I have a question", "not sure about this"
+
+Respond with ONLY "YES" or "NO".`;
+
+    const response = await client.messages.create({
+      model: FAST_ANTRHOPIC_MODEL,
+      max_tokens: 10,
+      temperature: 0,
+      system: systemPrompt,
+      messages: [
+        {
+          role: 'user',
+          content: `User message: "${userMessage}"\n\nAssistant response preview (first 500 chars): "${assistantResponse.substring(0, 500)}"\n\nIs this a confirmation to proceed with team creation? Answer YES or NO only.`,
+        },
+      ],
+    });
+
+    const answer = response.content[0]?.text?.trim().toUpperCase() || 'NO';
+    const isConfirmed = answer === 'YES';
+    
+    logger.info(`[checkUserConfirmation] User message: "${userMessage.substring(0, 50)}..." -> ${isConfirmed ? 'CONFIRMED' : 'NOT CONFIRMED'}`);
+    
+    return isConfirmed;
+  } catch (error) {
+    logger.error('[checkUserConfirmation] Error checking confirmation:', error.message);
+    return false; // Default to not confirmed on error
+  }
+};
+
 module.exports = {
   extractTeamCompositionWithLLM,
   validateAndEnhanceTeam,
+  checkUserConfirmation,
 };

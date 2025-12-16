@@ -17,6 +17,7 @@ const {
   mergeTeamMembers,
   extractTeamCompositionWithLLM,
   validateAndEnhanceTeam,
+  checkUserConfirmation,
 } = require('~/server/services/Teams');
 const { getTeamAgents, getTeamInfo, saveTeamAgents } = require('~/models/Conversation');
 const { getMessages } = require('~/models');
@@ -685,7 +686,30 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
         `[AgentController] Response structure - text: ${(finalResponse.text || '').length}, content: ${finalResponse.content?.length || 0}, keys: ${Object.keys(finalResponse).join(',')}`,
       );
 
-      const teamConfirmed = isDrSterlingMode && responseText.includes('[TEAM_CONFIRMED]');
+      let teamConfirmed = isDrSterlingMode && responseText.includes('[TEAM_CONFIRMED]');
+
+      // Backup detection using LLM: if no explicit [TEAM_CONFIRMED] marker but response is short
+      // Use LLM to intelligently determine if user confirmed team creation
+      if (!teamConfirmed && isDrSterlingMode) {
+        // Only try LLM check if response is SHORT (< 3000 chars) - indicating it's a confirmation acknowledgment
+        const isShortResponse = responseText.length < 3000 && responseText.length > 100;
+        
+        if (isShortResponse) {
+          try {
+            logger.info(`[AgentController] 🤖 Using LLM to check if user confirmed team creation...`);
+            const isUserConfirmed = await checkUserConfirmation(text, responseText, userId);
+            
+            if (isUserConfirmed) {
+              logger.info(
+                `[AgentController] 🔄 LLM backup detection: User confirmed team creation ("${text.substring(0, 50)}...")`,
+              );
+              teamConfirmed = true;
+            }
+          } catch (llmError) {
+            logger.warn(`[AgentController] LLM confirmation check failed, skipping backup detection:`, llmError.message);
+          }
+        }
+      }
 
       logger.info(
         `[AgentController] Team confirmation check - isDrSterlingMode: ${isDrSterlingMode}, hasConfirmation: ${teamConfirmed}, textLength: ${responseText.length}`,
@@ -713,6 +737,24 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
         logger.info(
           `[AgentController] 🎉 [TEAM_CONFIRMED] detected! Triggering team creation for conversation ${finalConversationId}`,
         );
+
+        // Send team_creating event to frontend BEFORE the response ends
+        // This allows the frontend to show the "Creating Team..." modal
+        logger.info(`[AgentController] 📡 Sending team_creating SSE event to frontend...`);
+        try {
+          sendEvent(res, {
+            event: 'team_creating',
+            data: {
+              conversationId: finalConversationId,
+              message: 'Team creation starting...',
+            },
+          });
+          logger.info(`[AgentController] ✅ team_creating SSE event sent successfully`);
+          // Small delay to ensure event is processed before final event
+          await new Promise(resolve => setTimeout(resolve, 100));
+        } catch (eventError) {
+          logger.error(`[AgentController] ❌ Failed to send team_creating event:`, eventError);
+        }
 
         // Trigger team creation in background with delay to ensure messages are saved
         setTimeout(async () => {
