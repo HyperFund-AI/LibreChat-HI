@@ -1,8 +1,9 @@
 const { fixJSONObject } = require('~/server/utils/jsonRepair');
-const { betaZodOutputFormat } = require('@anthropic-ai/sdk/helpers/beta/zod');
+const { betaZodTool } = require('@anthropic-ai/sdk/helpers/beta/zod');
 const { z } = require('zod');
 const { logger } = require('@librechat/data-schemas');
 const Anthropic = require('@anthropic-ai/sdk');
+const { createKbTools, executeKbToolCall } = require('./kbTools');
 
 const energySectorContext = `
 ## ENERGY SECTOR CONTEXT (Apply when relevant)
@@ -219,6 +220,20 @@ const zLeadAnalysisSchema = z.object({
 });
 
 /**
+ * Runtime-only schema for validating tool payloads coming from Anthropic tool_use.
+ *
+ * NOTE:
+ * - Keep zLeadAnalysisSchema unchanged to preserve the published tool schema.
+ * - Tool payloads are JSON objects, and JSON object keys are strings; therefore, validate assignments with string keys at runtime.
+ */
+const zLeadAnalysisRuntimeSchema = z.object({
+  analysis: z.string(),
+  selectedSpecialists: z.array(z.number().int().min(1)).min(2).max(10),
+  assignments: z.record(z.union([z.string(), z.number().nonnegative()]), z.string()),
+  deliverableOutline: z.string(),
+});
+
+/**
  * Team Orchestrator - Smart Collaboration Flow with Visible Progress
  *
  * 1. Project Lead analyzes objective and selects relevant specialists
@@ -235,6 +250,7 @@ const executeLeadAnalysis = async ({
   apiKey,
   teamAgents,
   onThinking,
+  conversationId = null,
   conversationHistory = [],
   fileContext = '',
   knowledgeContext = '',
@@ -302,22 +318,200 @@ Respond in JSON format according to schema.`;
   // Build full user message with all context
   const fullUserMessage = `Objective: ${userMessage}${additionalContext}${conversationContext}`;
 
-  const response = await client.beta.messages.parse({
-    model: ORCHESTRATOR_ANTHROPIC_MODEL,
-    max_tokens: 1000,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: fullUserMessage }],
-    output_format: betaZodOutputFormat(zLeadAnalysisSchema),
-  });
+  /**
+   * Enable KB tools for the Lead without introducing an incompatible orchestration refactor.
+   * This is a bounded tool loop:
+   * - If the model calls KB tools, we execute and feed tool results back.
+   * - We cap turns to avoid runaway tool calls.
+   * - We keep the final output as JSON-in-text, parsed via existing fixJSONObject logic below.
+   */
+  const kbTools = conversationId ? createKbTools(conversationId).map(({ __kb, ...t }) => t) : [];
 
-  const responseText = response.content[0]?.text || '';
+  // Lead submission tool: forces structured output via tool_use rather than "print JSON"
+  const submissionTool = {
+    ...betaZodTool({
+      name: 'submit_lead_analysis',
+      description: 'Submit the final analysis and specialist selection plan.',
+      inputSchema: zLeadAnalysisSchema,
+      run: async (args) => args,
+    }),
+  };
+
+  // Always allow the lead to submit via tool; add KB tools when available
+  const leadTools = [submissionTool, ...kbTools];
+
+  const messages = [{ role: 'user', content: fullUserMessage }];
+
+  let responseText = '';
+  let sharedContext = '';
+  const MAX_SHARED_CONTEXT_CHARS = 12000;
+  const maxToolTurns = 6;
+
+  for (let turn = 0; turn < maxToolTurns; turn++) {
+    const lastTurn = turn === maxToolTurns - 1;
+    const response = await client.messages.create({
+      model: ORCHESTRATOR_ANTHROPIC_MODEL,
+      max_tokens: 1200,
+      system:
+        systemPrompt +
+        (leadTools
+          ? `
+
+KNOWLEDGE BASE (RAG) TOOLS:
+- You can use tools to retrieve relevant context from the Team Knowledge Base:
+  - list_documents
+  - search_documents (prefer this first)
+  - read_knowledge_document (use line ranges when possible)
+- Use retrieved evidence to improve specialist selection and assignments.
+
+SUBMISSION REQUIREMENT:
+- You MUST call the submit_lead_analysis tool to submit your final plan.
+- Do NOT output the plan as plain text. Do NOT wrap it in an array.`
+          : ''),
+      messages,
+      tools: lastTurn ? [submissionTool] : leadTools,
+      tool_choice: lastTurn ? { type: 'tool', name: 'submit_lead_analysis' } : { type: 'auto' },
+    });
+
+    const content = response.content || [];
+    messages.push({ role: 'assistant', content });
+
+    const toolUseBlocks = content.filter((c) => c?.type === 'tool_use');
+    if (!toolUseBlocks || toolUseBlocks.length === 0) {
+      // Ignore plain-text output: the lead MUST submit via submit_lead_analysis.
+      responseText = content
+        .filter((c) => c?.type === 'text' && typeof c.text === 'string')
+        .map((c) => c.text)
+        .join('');
+      if (!responseText) {
+        responseText = getMessageText(content);
+      }
+
+      logger.warn(
+        `[executeLeadAnalysis] Lead did not use tools this turn (turn ${turn + 1}/${maxToolTurns}). Ignoring text and reprompting to submit.`,
+      );
+
+      if (lastTurn) {
+        logger.error(
+          '[executeLeadAnalysis] Final lead turn produced no tool_use. Falling back to default plan selection.',
+        );
+        break;
+      }
+
+      messages.push({
+        role: 'user',
+        content:
+          'You MUST call the submit_lead_analysis tool to submit your final plan. Do not output text. If you need context, call search_documents first, then submit_lead_analysis.',
+      });
+
+      continue;
+    }
+
+    const toolResults = [];
+    for (const block of toolUseBlocks) {
+      const toolName = block.name;
+      const toolInput = block.input;
+      const toolId = block.id;
+
+      // Submission tool: capture the structured plan directly from tool input.
+      if (toolName === 'submit_lead_analysis') {
+        const parsed = zLeadAnalysisRuntimeSchema.safeParse(toolInput);
+        if (!parsed.success) {
+          logger.warn('[executeLeadAnalysis] submit_lead_analysis failed schema validation');
+          logger.debug(parsed.error);
+
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolId,
+            content:
+              'Error: submission payload failed schema validation. Submit EXACTLY the required object fields and types.',
+          });
+          continue;
+        }
+
+        // Acknowledge tool (optional, but keeps tool protocol consistent)
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: toolId,
+          content: 'Submission received.',
+        });
+
+        // Do not continue the loop—return the validated plan.
+        messages.push({ role: 'user', content: toolResults });
+        return { ...parsed.data, sharedContext };
+      }
+
+      // KB tools: execute + accumulate shared context.
+      const toolResult =
+        toolName === 'list_documents' ||
+        toolName === 'search_documents' ||
+        toolName === 'read_knowledge_document'
+          ? await executeKbToolCall({ toolName, toolInput, conversationId })
+          : `Error: Tool "${toolName}" is not available in Lead analysis. Use submit_lead_analysis or KB tools only.`;
+
+      if (
+        toolName === 'list_documents' ||
+        toolName === 'search_documents' ||
+        toolName === 'read_knowledge_document'
+      ) {
+        const blockHeader = `\n\n---\n\n### KB Tool Output: ${toolName}\n`;
+        const next = `${blockHeader}${toolResult}`;
+        sharedContext = (sharedContext + next).slice(-MAX_SHARED_CONTEXT_CHARS);
+        logger.debug(
+          `[executeLeadAnalysis] KB tool ${toolName} finished. sharedContextChars=${sharedContext.length}`,
+        );
+      }
+
+      toolResults.push({
+        type: 'tool_result',
+        tool_use_id: toolId,
+        content: toolResult,
+      });
+    }
+
+    messages.push({ role: 'user', content: toolResults });
+
+    // Continue loop for next turn; lead should eventually call submit_lead_analysis.
+  }
+
+  if (!responseText) {
+    // Fallback: extract any text from the last assistant message
+    const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+    responseText = getMessageText(lastAssistant?.content);
+  }
 
   try {
-    const jsonMatch = fixJSONObject(responseText);
-    if (jsonMatch) {
-      const jsonMatch = responseText.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
-      const jsonText = jsonMatch ? jsonMatch[1] : responseText;
-      const plan = JSON.parse(fixJSONObject(jsonText)); // zLeadAnalysisSchema.parse();
+    const repaired = fixJSONObject(responseText);
+    if (repaired) {
+      // Prefer fenced JSON if present; tolerate either object or array payloads.
+      const fencedMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      const candidateText = fencedMatch ? fencedMatch[1] : responseText;
+
+      let rawPlan = JSON.parse(fixJSONObject(candidateText));
+
+      // Tolerate a common model variant: array-wrapped plan, e.g. [ { ...plan... } ]
+      if (
+        Array.isArray(rawPlan) &&
+        rawPlan.length === 1 &&
+        rawPlan[0] &&
+        typeof rawPlan[0] === 'object'
+      ) {
+        rawPlan = rawPlan[0];
+      }
+
+      const parsed = zLeadAnalysisSchema.safeParse(rawPlan);
+
+      if (!parsed.success) {
+        logger.warn('[executeLeadAnalysis] Lead returned JSON but it failed schema validation');
+        logger.debug({
+          receivedType: Array.isArray(rawPlan) ? 'array' : typeof rawPlan,
+          candidatePreview: String(candidateText).slice(0, 1200),
+        });
+        logger.debug(parsed.error);
+        throw new Error('Lead analysis JSON failed schema validation');
+      }
+
+      const plan = parsed.data;
       console.log('Parsed ', plan);
       if (onThinking) {
         onThinking({
@@ -326,10 +520,14 @@ Respond in JSON format according to schema.`;
           message: `Selected ${plan.selectedSpecialists?.length || 0} specialists for this task`,
         });
       }
-      return plan;
+      return { ...plan, sharedContext };
     }
   } catch (e) {
-    logger.warn('[executeLeadAnalysis] Could not parse JSON');
+    logger.warn('[executeLeadAnalysis] Could not parse/validate lead JSON');
+    logger.debug({
+      error: e?.message || String(e),
+      responsePreview: String(responseText || '').slice(0, 1200),
+    });
   }
 
   // Fallback: Select at least 2-3 specialists if parsing failed
@@ -344,6 +542,7 @@ Respond in JSON format according to schema.`;
     selectedSpecialists: selectedIndices,
     assignments: {},
     deliverableOutline: 'Comprehensive analysis',
+    sharedContext,
   };
 };
 
@@ -547,10 +746,12 @@ const executeSpecialist = async ({
   userMessage,
   apiKey,
   onThinking,
+  conversationId = null,
   previousContributions = [],
   conversationHistory = [],
   fileContext = '',
   knowledgeContext = '',
+  sharedContext = '',
   availableSpecialists = [],
 }) => {
   logger.info(
@@ -558,6 +759,24 @@ const executeSpecialist = async ({
   );
   logger.debug(
     `[executeSpecialist] Available specialists for ${agent.name}: ${availableSpecialists.map((s) => `${s.name} (${s.role})`).join(', ')}`,
+  );
+
+  const kbToolsEnabled = !!conversationId;
+  const contextStats = {
+    conversationId: conversationId || null,
+    kbToolsEnabled,
+    objectiveChars: (userMessage || '').length,
+    assignmentChars: (assignment || '').length,
+    fileContextChars: (fileContext || '').length,
+    knowledgeContextChars: (knowledgeContext || '').length,
+    sharedContextChars: (sharedContext || '').length,
+    conversationHistoryCount: conversationHistory?.length || 0,
+    previousContributionsCount: previousContributions.length,
+    availableSpecialistsCount: availableSpecialists.length,
+  };
+
+  logger.debug(
+    `[executeSpecialist] Context stats for ${agent.name}: ${JSON.stringify(contextStats)}`,
   );
 
   if (onThinking) {
@@ -620,6 +839,17 @@ ${fileContext}
     additionalContext += `
 ## Knowledge Base Context
 ${knowledgeContext}
+
+---
+`;
+  }
+
+  if (sharedContext && sharedContext.trim()) {
+    additionalContext += `
+## Shared Context (KB Tool Outputs)
+The following context was retrieved via knowledge-base tools earlier in the workflow. Prefer citing this evidence when relevant.
+
+${sharedContext}
 
 ---
 `;
@@ -695,7 +925,28 @@ ${colleaguesList}
 **IMPORTANT:** When you identify a genuine need for another specialist's input, USE THE TOOL immediately rather than making assumptions.`
       : '';
 
-  const toolInstructions = `${askUserInstructions}${colleagueInstructions}`;
+  const kbInstructions = conversationId
+    ? `
+
+KNOWLEDGE BASE (RAG):
+You have access to the following Knowledge Base tools to retrieve evidence and reduce assumptions:
+
+- list_documents: list available documents (IDs + titles)
+- search_documents: semantic search across the knowledge base (start here)
+- read_knowledge_document: read a specific document by ID (use line ranges when possible)
+
+**When to use KB tools:**
+- When you need facts, requirements, constraints, definitions, or prior decisions from uploaded/approved docs
+- When a claim would benefit from citations or you want to avoid guessing
+- When there are multiple documents and you need to find the relevant one quickly
+
+**How to use KB tools effectively:**
+- Use search_documents with a focused query first
+- Prefer reading only the relevant section with read_knowledge_document(start_line/end_line)
+- Quote or reference retrieved content in your OUTPUT where it strengthens recommendations`
+    : '';
+
+  const toolInstructions = `${askUserInstructions}${kbInstructions}${colleagueInstructions}`;
 
   logger.info(
     `[executeSpecialist] Tool instructions for ${agent.name}: ${toolInstructions ? 'INCLUDED' : 'NOT INCLUDED'} (availableSpecialists.length=${availableSpecialists.length})`,
@@ -763,8 +1014,18 @@ ${collaborationGuidelines}${toolInstructions}`;
   // Prepare messages array for potential continuation after tool use
   let messages = [{ role: 'user', content: userContent }];
 
-  // Build tools array - always include ask_user, add colleague tool if colleagues available
+  // Build tools array
+  // - Always include ask_user
+  // - Include KB tools (list/search/read) when conversationId is available
+  // - Add colleague tool if colleagues are available
   const tools = [ASK_USER_TOOL];
+
+  const kbTools = conversationId ? createKbTools(conversationId).map(({ __kb, ...t }) => t) : [];
+
+  if (kbTools.length > 0) {
+    tools.push(...kbTools);
+  }
+
   if (availableSpecialists.length > 1) {
     tools.push(REQUEST_FROM_COLLEAGUE_TOOL);
   }
@@ -785,6 +1046,7 @@ ${collaborationGuidelines}${toolInstructions}`;
     let chunkCount = 0;
     let toolUseBlock = null;
     let currentToolInput = '';
+    let lastStopReason = null;
 
     const streamOptions = {
       model: agent.model || ORCHESTRATOR_ANTHROPIC_MODEL,
@@ -795,6 +1057,7 @@ ${collaborationGuidelines}${toolInstructions}`;
 
     if (tools) {
       streamOptions.tools = tools;
+      streamOptions.tool_choice = { type: 'auto' };
     }
 
     logger.info(
@@ -889,27 +1152,60 @@ ${collaborationGuidelines}${toolInstructions}`;
       // Handle tool use content block stop
       if (event.type === 'content_block_stop' && toolUseBlock) {
         try {
-          toolUseBlock.input = JSON.parse(currentToolInput);
+          // Some tools legitimately have empty input (e.g., list_documents with {}).
+          // Treat empty/whitespace as an empty object rather than a parsing failure.
+          if (!currentToolInput || currentToolInput.trim() === '') {
+            toolUseBlock.input = {};
+          } else {
+            try {
+              toolUseBlock.input = JSON.parse(currentToolInput);
+            } catch (jsonErr) {
+              // Attempt repair for partial/incremental JSON
+              const repaired = fixJSONObject(currentToolInput);
+              toolUseBlock.input = repaired ? JSON.parse(repaired) : JSON.parse(currentToolInput);
+              logger.debug(jsonErr);
+            }
+          }
+
           logger.info(
             `[executeSpecialist] ${agent.name} tool input parsed: ${JSON.stringify(toolUseBlock.input)}`,
           );
-        } catch (e) {
+        } catch (err) {
           logger.warn(`[executeSpecialist] Failed to parse tool input: ${currentToolInput}`);
+          logger.debug(err);
           toolUseBlock.input = { error: 'Failed to parse input' };
         }
       }
 
       // Log message delta events to see stop reason
       if (event.type === 'message_delta') {
+        lastStopReason = event.delta?.stop_reason ?? lastStopReason;
         logger.info(
-          `[executeSpecialist] ${agent.name} message_delta: stop_reason=${event.delta?.stop_reason}`,
+          `[executeSpecialist] ${agent.name} message_delta: stop_reason=${event.delta?.stop_reason}, hasToolUse=${!!toolUseBlock}`,
         );
       }
     }
 
+    if (lastStopReason === 'tool_use' && !toolUseBlock) {
+      logger.warn(
+        `[executeSpecialist] ${agent.name} stream ended with stop_reason=tool_use but no tool_use block was captured`,
+      );
+    }
+
     logger.info(
-      `[executeSpecialist] ${agent.name} stream complete. Total: ${accumulatedText.length} chars, ${chunkCount} chunks, toolUse: ${toolUseBlock ? 'yes' : 'no'}`,
+      `[executeSpecialist] ${agent.name} stream complete. Total: ${accumulatedText.length} chars, ${chunkCount} chunks, stop_reason=${lastStopReason || 'unknown'}, toolUse=${toolUseBlock ? 'yes' : 'no'}, toolName=${toolUseBlock?.name || 'n/a'}, toolInputBytes=${currentToolInput?.length || 0}`,
     );
+
+    // High-signal debug: tools are available but the model didn't use any.
+    if (!toolUseBlock && Array.isArray(streamOptions.tools) && streamOptions.tools.length > 0) {
+      const hasKbTools = streamOptions.tools.some((t) =>
+        ['list_documents', 'search_documents', 'read_knowledge_document'].includes(t?.name),
+      );
+
+      logger.debug(
+        `[executeSpecialist] ${agent.name} did NOT use any tools despite toolsAvailable=${streamOptions.tools.length}, hasKbTools=${hasKbTools}, stop_reason=${lastStopReason || 'unknown'}. If you expected tool usage, tighten the prompt to require citations and explicitly instruct to call search_documents first.`,
+      );
+    }
 
     return {
       text: accumulatedText,
@@ -929,8 +1225,18 @@ ${collaborationGuidelines}${toolInstructions}`;
   let collabText = result.collabText || '';
   let lastCollabSent = result.lastCollabSent || '';
 
-  // Handle tool use if the model requested it
-  if (result.toolUse) {
+  /**
+   * Handle tool use(s) if the model requested them.
+   *
+   * Previously we supported a single tool call + single continuation.
+   * This loop allows multiple sequential tool calls during a single specialist run,
+   * while keeping behavior bounded to avoid runaway tool-chaining.
+   */
+  const MAX_TOOL_TURNS = 4;
+  let toolTurns = 0;
+
+  while (result.toolUse && toolTurns < MAX_TOOL_TURNS) {
+    toolTurns++;
     const toolInput = result.toolUse.input;
     let toolResult;
 
@@ -1031,6 +1337,32 @@ Since this is marked as "helpful" (not critical/important), please proceed with 
         );
         toolResult = `Could not find a colleague matching "${toolInput.colleague_role}". Available team members are: ${availableSpecialists.map((s) => s.role).join(', ')}. Please proceed with your analysis using available information.`;
       }
+    } else if (
+      result.toolUse.name === 'list_documents' ||
+      result.toolUse.name === 'search_documents' ||
+      result.toolUse.name === 'read_knowledge_document'
+    ) {
+      // Handle KB tools (RAG)
+      logger.info(`[executeSpecialist] ${agent.name} using KB tool: ${result.toolUse.name}`);
+
+      if (onThinking) {
+        onThinking({
+          agent: agent.name,
+          role: agent.role,
+          action: 'kb_tool',
+          message: `Retrieving context from Knowledge Base (${result.toolUse.name})...`,
+        });
+      }
+
+      toolResult = await executeKbToolCall({
+        toolName: result.toolUse.name,
+        toolInput,
+        conversationId,
+      });
+      // Avoid logging full KB tool outputs; log metadata only.
+      logger.debug(
+        `[KnowledgebaseTools] Finished ${result.toolUse.name}: outputChars=${typeof toolResult === 'string' ? toolResult.length : 0}`,
+      );
     } else {
       // Unknown tool
       logger.warn(`[executeSpecialist] Unknown tool called: ${result.toolUse.name}`);
@@ -1042,8 +1374,10 @@ Since this is marked as "helpful" (not critical/important), please proceed with 
       `[executeSpecialist] Building continuation messages. accumulatedText length: ${accumulatedText.length}, toolUse.id: ${result.toolUse.id}`,
     );
 
+    // Use only the *current* streamed text as the assistant text for this tool turn
+    // (do not re-send the entire accumulatedText repeatedly).
     const assistantContent = [
-      ...(accumulatedText ? [{ type: 'text', text: accumulatedText }] : []),
+      ...(result.text ? [{ type: 'text', text: result.text }] : []),
       {
         type: 'tool_use',
         id: result.toolUse.id,
@@ -1068,13 +1402,18 @@ Since this is marked as "helpful" (not critical/important), please proceed with 
       ],
     });
 
-    logger.debug(`[executeSpecialist] Tool result content: ${toolResult.substring(0, 100)}...`);
+    // Avoid logging tool output content (may contain KB excerpts / sensitive info). Log size only.
+    logger.debug(
+      `[executeSpecialist] Tool result size: ${typeof toolResult === 'string' ? toolResult.length : 0} chars`,
+    );
 
     // Determine continuation message based on tool type
     const continuationMessage =
       result.toolUse.name === 'ask_user_in_conversation'
         ? `Proceeding with analysis (user question noted)...`
-        : `Received colleague input, continuing analysis...`;
+        : result.toolUse.name === 'request_from_colleague'
+          ? `Received colleague input, continuing analysis...`
+          : `Received knowledge base context, continuing analysis...`;
 
     if (onThinking) {
       onThinking({
@@ -1092,33 +1431,49 @@ Since this is marked as "helpful" (not critical/important), please proceed with 
       `[executeSpecialist] Messages for continuation: ${messages.length} messages, last message role: ${messages[messages.length - 1]?.role}`,
     );
 
-    // Execute continuation request
+    // Execute next turn (may request another tool)
     try {
-      const continuationResult = await executeStreamingRequest(messages);
-      accumulatedText += '\n\n' + continuationResult.text;
-      if (continuationResult.thinkingText) {
-        thinkingText = continuationResult.thinkingText;
+      const nextResult = await executeStreamingRequest(messages);
+
+      // Append new text to overall accumulated output
+      if (nextResult.text) {
+        accumulatedText += (accumulatedText ? '\n\n' : '') + nextResult.text;
       }
-      if (continuationResult.lastThinkingSent) {
-        lastThinkingSent = continuationResult.lastThinkingSent;
+
+      // Update latest extracted sections (streaming trackers)
+      if (nextResult.thinkingText) {
+        thinkingText = nextResult.thinkingText;
       }
-      if (continuationResult.collabText) {
-        collabText = continuationResult.collabText;
+      if (nextResult.lastThinkingSent) {
+        lastThinkingSent = nextResult.lastThinkingSent;
       }
-      if (continuationResult.lastCollabSent) {
-        lastCollabSent = continuationResult.lastCollabSent;
+      if (nextResult.collabText) {
+        collabText = nextResult.collabText;
+      }
+      if (nextResult.lastCollabSent) {
+        lastCollabSent = nextResult.lastCollabSent;
       }
 
       logger.info(
-        `[executeSpecialist] ${agent.name} continuation complete, accumulated ${accumulatedText.length} chars`,
+        `[executeSpecialist] ${agent.name} continuation complete (turn ${toolTurns}/${MAX_TOOL_TURNS}), accumulated ${accumulatedText.length} chars`,
       );
+
+      // Continue looping if the next streamed response also requested a tool
+      result = nextResult;
     } catch (continuationError) {
       logger.error(
         `[executeSpecialist] ${agent.name} continuation FAILED: ${continuationError.message}`,
       );
       logger.error(`[executeSpecialist] Continuation error stack: ${continuationError.stack}`);
-      // Don't throw - allow the function to complete with what we have
+      // Stop the tool loop and continue with what we have
+      break;
     }
+  }
+
+  if (result.toolUse && toolTurns >= MAX_TOOL_TURNS) {
+    logger.warn(
+      `[executeSpecialist] ${agent.name} exceeded MAX_TOOL_TURNS (${MAX_TOOL_TURNS}) - continuing without further tool calls`,
+    );
   }
 
   // Final extraction
@@ -1605,10 +1960,12 @@ Please continue your analysis incorporating this information.
       userMessage: originalUserMessage,
       apiKey,
       onThinking,
+      conversationId,
       previousContributions: currentSpecialistInputs.filter((i) => !i.hasPendingQuestion),
       conversationHistory,
       fileContext,
       knowledgeContext,
+      sharedContext: workPlan?.sharedContext || '',
       availableSpecialists: fullSelectedSpecialists,
     });
 
@@ -1668,10 +2025,12 @@ Please continue your analysis incorporating this information.
         userMessage: originalUserMessage,
         apiKey,
         onThinking,
+        conversationId,
         previousContributions: [...currentSpecialistInputs],
         conversationHistory,
         fileContext,
         knowledgeContext,
+        sharedContext: workPlan?.sharedContext || '',
         availableSpecialists: fullSelectedSpecialists,
       });
 
@@ -1884,6 +2243,7 @@ const orchestrateTeamResponse = async ({
       apiKey,
       teamAgents,
       onThinking,
+      conversationId,
       conversationHistory,
       fileContext,
       knowledgeContext,
@@ -1922,10 +2282,12 @@ const orchestrateTeamResponse = async ({
         userMessage,
         apiKey,
         onThinking,
+        conversationId,
         previousContributions: [...specialistInputs], // Clone to avoid mutation issues
         conversationHistory,
         fileContext,
         knowledgeContext,
+        sharedContext: workPlan.sharedContext || '',
         availableSpecialists: selectedSpecialists, // Enable tool-based colleague queries
       });
 
