@@ -1217,7 +1217,13 @@ const isArtifactComplete = (text) => {
 
 const getContinuationContext = (text, maxContextLength = 1500) => {
   const artifactStart = text.indexOf(':::artifact');
-  if (artifactStart === -1) return '';
+  if (artifactStart === -1) {
+    const lines = text.split('\n');
+    const lastLines = lines.slice(-30).join('\n');
+    return lastLines.length > maxContextLength
+      ? lastLines.substring(lastLines.length - maxContextLength)
+      : lastLines;
+  }
 
   const markdownStart = text.indexOf('```markdown', artifactStart);
   if (markdownStart === -1) {
@@ -2131,6 +2137,110 @@ const shouldUseTeamOrchestration = (conversation) => {
   return teamAgents && Array.isArray(teamAgents) && teamAgents.length > 0;
 };
 
+/**
+ * Continue a long markdown response that was cut off by max_tokens
+ * Similar to synthesizeDeliverableStreaming but for regular chat responses (not artifacts)
+ */
+const continueMarkdownResponse = async ({
+  apiKey,
+  fullText,
+  systemPrompt,
+  userMessage,
+  onStream,
+  maxAttempts = 15,
+}) => {
+  const client = new Anthropic({ apiKey });
+  let accumulatedText = fullText;
+  let attempts = 0;
+  let finishReason = null;
+
+  while (attempts < maxAttempts) {
+    const isContinuation = attempts > 0 || accumulatedText.length > 0;
+    let messages = [];
+
+    if (isContinuation) {
+      const context = getContinuationContext(accumulatedText, 3000);
+      const continuationText = context || accumulatedText.substring(Math.max(0, accumulatedText.length - 3000));
+      
+      messages.push({
+        role: 'assistant',
+        content: continuationText,
+      });
+
+      messages.push({
+        role: 'user',
+        content: `CRITICAL INSTRUCTIONS FOR CONTINUATION:
+
+1. The previous response was cut off due to token limits. Continue EXACTLY from where it stopped.
+2. Do NOT repeat any content that was already written above.
+3. Do NOT add new headers, sections, or restart the document.
+4. Do NOT duplicate markdown tags, headers (#), list items (-, *, +, 1.), or any other formatting elements.
+5. IMPORTANT: Check the last character of the previous text. If it is a letter, digit, or any non-whitespace character that is NOT punctuation (.,;:!?-), you MUST start your continuation with a SPACE to prevent words from being joined together.
+6. If the last character is already a space, newline, or punctuation mark, continue normally without adding an extra space.
+7. Simply continue writing the content naturally from where it was cut off.
+8. Complete the response fully and properly.`,
+      });
+    } else {
+      messages.push({
+        role: 'user',
+        content: userMessage,
+      });
+    }
+
+    const stream = client.messages.stream({
+      model: ORCHESTRATOR_ANTHROPIC_MODEL,
+      max_tokens: 4000,
+      system: systemPrompt,
+      messages: messages,
+    });
+
+    let currentChunk = '';
+    let lastEvent = null;
+    let isFirstChunk = true;
+
+    for await (const event of stream) {
+      lastEvent = event;
+
+      if (event.type === 'content_block_delta' && event.delta?.text) {
+        let chunk = event.delta.text;
+
+        if (chunk) {
+          currentChunk += chunk;
+          accumulatedText += chunk;
+          if (onStream) {
+            onStream(chunk);
+          }
+        }
+      }
+
+      if (event.type === 'message_stop') {
+        finishReason = event.finish_reason || 'end_turn';
+      } else if (event.type === 'message_delta' && event.delta?.stop_reason) {
+        finishReason = event.delta.stop_reason;
+      }
+    }
+
+    const isMaxTokens = finishReason === 'max_tokens';
+    const isEndTurn = finishReason === 'end_turn';
+    const hasNewContent = currentChunk.length > 0;
+    const isFirstAttempt = attempts === 0;
+    
+    const needsContinuation = isMaxTokens || (isEndTurn && isFirstAttempt && hasNewContent);
+    
+    logger.info(`[continueMarkdownResponse] Attempt ${attempts}: finishReason=${finishReason}, isMaxTokens=${isMaxTokens}, isEndTurn=${isEndTurn}, hasNewContent=${hasNewContent}, needsContinuation=${needsContinuation}, currentChunk.length=${currentChunk.length}`);
+
+    if (!needsContinuation || attempts >= maxAttempts - 1) {
+      logger.info(`[continueMarkdownResponse] Response complete or no continuation needed (attempt ${attempts}, finishReason: ${finishReason})`);
+      break;
+    }
+
+    attempts++;
+    logger.info(`[continueMarkdownResponse] Response incomplete, continuing (attempt ${attempts})`);
+  }
+
+  return accumulatedText;
+};
+
 module.exports = {
   executeLeadAnalysis,
   executeSpecialist,
@@ -2141,4 +2251,7 @@ module.exports = {
   getOrchestrationState,
   saveOrchestrationState,
   clearOrchestrationState,
+  // Helper for continuing long markdown responses
+  continueMarkdownResponse,
+  getContinuationContext,
 };

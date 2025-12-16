@@ -26,6 +26,7 @@ const {
   getTokenCountForMessage,
   createMetadataAggregator,
 } = require('@librechat/agents');
+const { GraphEvents } = require('@librechat/agents');
 const {
   Constants,
   Permissions,
@@ -837,6 +838,10 @@ class AgentClient extends BaseClient {
     const appConfig = this.options.req.config;
     const balanceConfig = getBalanceConfig(appConfig);
     const transactionsConfig = getTransactionsConfig(appConfig);
+    
+    let initialMessages = [];
+    let indexTokenCountMap;
+    
     try {
       if (!abortController) {
         abortController = new AbortController();
@@ -866,11 +871,11 @@ class AgentClient extends BaseClient {
       };
 
       const toolSet = new Set((this.options.agent.tools ?? []).map((tool) => tool && tool.name));
-      let { messages: initialMessages, indexTokenCountMap } = formatAgentMessages(
+      ({ messages: initialMessages, indexTokenCountMap } = formatAgentMessages(
         payload,
         this.indexTokenCountMap,
         toolSet,
-      );
+      ));
 
       /**
        * @param {BaseMessage[]} messages
@@ -1012,21 +1017,111 @@ class AgentClient extends BaseClient {
           this.artifactPromises.push(...attachments);
         }
 
-        await this.recordCollectedUsage({
-          context: 'message',
-          balance: balanceConfig,
-          transactions: transactionsConfig,
-        });
-      } catch (err) {
-        logger.error(
-          '[api/server/controllers/agents/client.js #chatCompletion] Error in cleanup phase',
-          err,
+      await this.recordCollectedUsage({
+        context: 'message',
+        balance: balanceConfig,
+        transactions: transactionsConfig,
+      });
+      
+      const modelEndHandler = this.options.eventHandlers?.[GraphEvents.CHAT_MODEL_END];
+      if (modelEndHandler && modelEndHandler.stopReasons) {
+        const maxTokensStop = modelEndHandler.stopReasons.find(
+          (sr) => sr.stopReason === 'max_tokens',
         );
+        
+        if (maxTokensStop) {
+          const agentId = maxTokensStop.agentId;
+          logger.info(`[AgentClient] 🔍 Found max_tokens stop_reason for agent: ${agentId}`);
+          
+          const { isDrSterlingAgent } = require('~/server/services/Teams/drSterlingAgent');
+          if (agentId && isDrSterlingAgent(agentId)) {
+            logger.info(`[AgentClient] ✅ Max tokens detected for Dr. Sterling, attempting continuation...`);
+            
+            try {
+              const textParts = this.contentParts
+                .filter((part) => part.type === ContentTypes.TEXT)
+                .map((part) => part.text || part[ContentTypes.TEXT] || '')
+                .join('');
+              
+              logger.info(`[AgentClient] Current response length: ${textParts.length} chars`);
+              
+              if (textParts.length > 0) {
+                const { continueMarkdownResponse } = require('~/server/services/Teams/orchestrator');
+                const apiKey = process.env.ANTHROPIC_API_KEY;
+                const agent = this.options.agent;
+                const systemPrompt = agent?.instructions || '';
+                const lastUserMessage = initialMessages
+                  .filter((msg) => msg.constructor.name === 'HumanMessage')
+                  .pop();
+                const userMessage = typeof lastUserMessage?.content === 'string' 
+                  ? lastUserMessage.content 
+                  : (Array.isArray(lastUserMessage?.content) 
+                      ? lastUserMessage.content.map(c => c.text || c).join('')
+                      : '');
+                
+                logger.info(`[AgentClient] Continuation params - apiKey: ${!!apiKey}, systemPrompt: ${systemPrompt.length} chars, userMessage: ${userMessage.length} chars`);
+                
+                if (apiKey && systemPrompt && userMessage) {
+                  const { sendEvent } = require('@librechat/api');
+                  const res = this.options.res;
+                  
+                  let accumulatedContinuationText = textParts;
+                  const lastTextIndex = this.contentParts
+                    .map((part, idx) => part.type === ContentTypes.TEXT ? idx : -1)
+                    .filter(idx => idx !== -1)
+                    .pop() ?? -1;
+                  
+                  const continuedText = await continueMarkdownResponse({
+                    apiKey,
+                    fullText: textParts,
+                    systemPrompt,
+                    userMessage,
+                    onStream: (chunk) => {
+                      accumulatedContinuationText += chunk;
+                      
+                      this.contentParts[lastTextIndex] = {
+                        type: ContentTypes.TEXT,
+                        text: accumulatedContinuationText,
+                        index: lastTextIndex,
+                      };
+                      
+                      if (res) {
+                        try {
+                          sendEvent(res, {
+                            type: ContentTypes.TEXT,
+                            text: accumulatedContinuationText,
+                            index: lastTextIndex,
+                            messageId: this.responseMessageId,
+                            conversationId: this.conversationId,
+                          });
+                        } catch (streamError) {
+                          logger.debug('[AgentClient] Error streaming continuation chunk:', streamError);
+                        }
+                      }
+                    },
+                  });
+                  
+                  logger.info(`[AgentClient] ✅ Continuation complete: ${continuedText.length} chars total`);
+                } else {
+                  logger.warn(`[AgentClient] ⚠️ Missing continuation params - apiKey: ${!!apiKey}, systemPrompt: ${!!systemPrompt}, userMessage: ${!!userMessage}`);
+                }
+              }
+            } catch (continuationError) {
+              logger.error('[AgentClient] ❌ Error continuing response:', continuationError);
+            }
+          }
+        }
       }
-      run = null;
-      config = null;
-      memoryPromise = null;
+    } catch (err) {
+      logger.error(
+        '[api/server/controllers/agents/client.js #chatCompletion] Error in cleanup phase',
+        err,
+      );
     }
+    run = null;
+    config = null;
+    memoryPromise = null;
+  }
   }
 
   /**
