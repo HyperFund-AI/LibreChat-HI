@@ -266,14 +266,24 @@ const checkUserConfirmation = async (userMessage, assistantResponse, userId) => 
 
     const client = new Anthropic({ apiKey: anthropicApiKey });
 
-    const systemPrompt = `You are analyzing a conversation where a user is reviewing a team specification from Dr. Sterling.
-Your task is to determine if the user's message is a CONFIRMATION to proceed with creating the team.
+    const systemPrompt = `You are analyzing if a user has CONFIRMED the creation of a SUPERHUMAN TEAM after Dr. Sterling presented a full team specification.
 
-A confirmation means the user is approving/accepting the proposed team and wants to proceed.
-Examples of confirmations: "I confirm", "looks good, proceed", "create the team", "let's go", "approved", "yes, create it"
-Examples of NON-confirmations: "what about X?", "can you change Y?", "I have a question", "not sure about this"
+IMPORTANT CONTEXT:
+- Dr. Sterling first presents detailed team member specifications (with names, roles, tiers like "Tier 3", "Tier 4", expertise areas)
+- ONLY AFTER seeing the full team specification, the user may confirm to CREATE the team
+- The assistant response should indicate team creation is proceeding (e.g., "creating your team", "assembling", "proceeding with team creation")
 
-Respond with ONLY "YES" or "NO".`;
+A VALID confirmation requires:
+1. User EXPLICITLY approves/confirms (e.g., "I confirm", "approved", "create the team", "let's proceed", "go ahead")
+2. The context shows a TEAM has been specified (not just project assumptions or questions)
+
+REJECT these as NOT confirmations:
+- Questions or requests for more info ("what about X?", "can you explain?")
+- Requests to make assumptions or continue analysis ("make assumptions", "proceed with analysis")
+- General acknowledgments that don't explicitly approve team creation ("ok", "thanks", "understood")
+- Early conversation before any team members have been specified
+
+Answer ONLY "YES" or "NO".`;
 
     const response = await client.messages.create({
       model: FAST_ANTRHOPIC_MODEL,
@@ -283,7 +293,12 @@ Respond with ONLY "YES" or "NO".`;
       messages: [
         {
           role: 'user',
-          content: `User message: "${userMessage}"\n\nAssistant response preview (first 500 chars): "${assistantResponse.substring(0, 500)}"\n\nIs this a confirmation to proceed with team creation? Answer YES or NO only.`,
+          content: `User message: "${userMessage}"
+
+Assistant response (for context): "${assistantResponse.substring(0, 1000)}"
+
+Does the assistant response indicate a TEAM is being CREATED (not just analyzed), AND did the user EXPLICITLY confirm team creation?
+Answer YES only if BOTH conditions are met. Otherwise answer NO.`,
         },
       ],
     });

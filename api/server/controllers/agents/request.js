@@ -694,7 +694,16 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
         // Only try LLM check if response is SHORT (< 3000 chars) - indicating it's a confirmation acknowledgment
         const isShortResponse = responseText.length < 3000 && responseText.length > 100;
         
-        if (isShortResponse) {
+        // Pre-filter: response must indicate team creation is happening (not just project analysis)
+        const responseIndicatesTeamCreation = 
+          responseText.toLowerCase().includes('creating') ||
+          responseText.toLowerCase().includes('assembling') ||
+          responseText.toLowerCase().includes('team is ready') ||
+          responseText.toLowerCase().includes('proceeding with') ||
+          responseText.toLowerCase().includes('excellent choice') ||
+          responseText.toLowerCase().includes('your team');
+        
+        if (isShortResponse && responseIndicatesTeamCreation) {
           try {
             logger.info(`[AgentController] 🤖 Using LLM to check if user confirmed team creation...`);
             const isUserConfirmed = await checkUserConfirmation(text, responseText, userId);
@@ -708,6 +717,8 @@ const AgentController = async (req, res, next, initializeClient, addTitle) => {
           } catch (llmError) {
             logger.warn(`[AgentController] LLM confirmation check failed, skipping backup detection:`, llmError.message);
           }
+        } else if (isShortResponse && !responseIndicatesTeamCreation) {
+          logger.debug(`[AgentController] Skipping LLM check - response doesn't indicate team creation`);
         }
       }
 
