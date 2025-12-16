@@ -122,15 +122,6 @@ async function handleTeamOrchestration(
 
       // Show "thinking" process - team collaboration
       onThinking: (thinking) => {
-        // // Log ALL thinking events for debugging
-        // logger.info(`[handleTeamOrchestration] onThinking callback called:`, {
-        //   agent: thinking.agent,
-        //   action: thinking.action,
-        //   hasThinking: !!thinking.thinking,
-        //   thinkingLength: thinking.thinking?.length || 0,
-        //   messagePreview: thinking.message?.substring(0, 50),
-        // });
-
         // Send as a "step" event to show progress
         const eventPayload = {
           event: 'on_thinking',
@@ -139,7 +130,13 @@ async function handleTeamOrchestration(
             role: thinking.role || '',
             action: thinking.action,
             message: thinking.message,
-            thinking: thinking.thinking || thinking.message, // Include full thinking text if available
+            // Include content based on action type
+            thinking: thinking.thinking || null,
+            collaboration: thinking.collaboration || null,
+            // For asking_user action, include question details
+            question: thinking.question || null,
+            options: thinking.options || null,
+            importance: thinking.importance || null,
           },
         };
         sendEvent(res, eventPayload);

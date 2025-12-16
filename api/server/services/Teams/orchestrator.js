@@ -609,36 +609,39 @@ ${agent.instructions || ''}
 
 Your expertise: ${agent.expertise || agent.responsibilities || 'Specialist'}
 
-IMPORTANT: Structure your response in two clear sections:
+IMPORTANT: Structure your response in THREE clear sections:
 
 <THINKING>
-Think out loud as you would in a real team meeting. Be conversational and collaborative:
-${previousContributions.length > 0 ? `
-- Reference colleagues by name when building on their work (e.g., "Sarah, I'm seeing something in the data that connects to your regulatory findings...")
-- Flag important discoveries to the project lead (e.g., "Marcus, I need to flag something that's developing...")
-- Ask clarifying questions if you need input from another specialist's domain
-- Provide specific data points that other specialists can use (e.g., "Kevin, for your risk model, here are the probability distributions...")
-- Build explicitly on what previous specialists found (e.g., "That's exactly what I've been researching, and it's telling a clear story...")
-` : '- Think through your approach step by step\n- Consider what information would help the team'}
+Your internal reasoning process. Brief notes on your approach and key considerations.
 </THINKING>
 
+<COLLABORATION_CONVO>
+This is the TEAM CONVERSATION that will be shown to stakeholders. Write as if speaking in a real team meeting:
+${previousContributions.length > 0 ? `
+- Address colleagues by name when building on their work (e.g., "${availableSpecialists[0]?.name || 'Marcus'}, I need to flag something that's developing...")
+- Reference specific findings from previous specialists (e.g., "That's exactly what I've been researching, and it's telling a clear story...")
+- Provide data points other specialists can use (e.g., "Kevin, for your risk model—here are the probability distributions: ...")
+- Flag implications for the project (e.g., "This moves tribal consultation from a line item to the critical path")
+- Ask clarifying questions if you need input from another domain
+` : `- Introduce your initial findings to the team
+- Flag what you're discovering and why it matters
+- Indicate what you'll be investigating`}
+
+Example tone: "Marcus, I need to flag something. I've been mapping the tribal landscape, and the two nations with territorial claims along this corridor—this isn't a routine consultation situation. I'm finding significant cultural resource sensitivity that I don't think the current project plan accounts for."
+</COLLABORATION_CONVO>
+
 <OUTPUT>
-Your final expert analysis in a conversational, professional tone. Write as if presenting findings in a team meeting:
-- Address the project lead and relevant colleagues by name where appropriate
-- Connect your findings to what other specialists have contributed
-- Highlight implications for other team members' work areas
-- Be specific with data, percentages, and timeframes
-- Flag items that need attention or that change the project's risk profile
+Your final expert analysis in bullet points. Be specific with data, percentages, and timeframes.
 </OUTPUT>
 
 ${colleagueNames ? `Your colleagues on this project: ${colleagueNames}` : ''}
 
 Guidelines:
-- Be conversational and collegial—this is a team collaboration, not a formal report
-- Reference colleagues by name when their work is relevant
-- Flag critical findings explicitly (e.g., "This moves X from a line item to the critical path")
-- Provide actionable insights that help the team
-- Keep output focused (200-300 words) but don't sacrifice clarity
+- COLLABORATION_CONVO is the conversational team dialogue (visible to user)
+- THINKING is your private reasoning (also visible but secondary)
+- OUTPUT is your structured analysis
+- Be specific and data-driven throughout
+- Keep each section focused and purposeful
 ${collaborationGuidelines}${toolInstructions}`;
 
   const client = new Anthropic({ apiKey });
@@ -697,7 +700,10 @@ ${collaborationGuidelines}${toolInstructions}`;
 
     logger.info(`[executeSpecialist] Starting stream for ${agent.name}`);
 
-    // Stream each chunk and extract thinking in real-time
+    let lastCollabSent = '';
+    let collabText = '';
+
+    // Stream each chunk and extract thinking/collaboration in real-time
     for await (const event of stream) {
       // Handle text content
       if (event.type === 'content_block_delta' && event.delta?.text) {
@@ -705,14 +711,29 @@ ${collaborationGuidelines}${toolInstructions}`;
         accumulatedText += chunk;
         chunkCount++;
 
-        // Log every 10 chunks to show progress
-        // if (chunkCount % 10 === 0) {
-        //   logger.info(
-        //     `[executeSpecialist] ${agent.name} received ${chunkCount} chunks, ${accumulatedText.length} chars total`,
-        //   );
-        // }
+        // Try to extract COLLABORATION_CONVO section as it streams (primary - shown to user)
+        const collabMatch = accumulatedText.match(/<COLLABORATION_CONVO>([\s\S]*?)(?:<\/COLLABORATION_CONVO>|$)/i);
+        if (collabMatch && collabMatch[1]) {
+          const currentCollab = collabMatch[1].trim();
 
-        // Try to extract thinking section as it streams
+          // Send updates when collaboration content grows significantly
+          if (currentCollab.length > lastCollabSent.length + 30 || chunkCount % 3 === 0) {
+            collabText = currentCollab;
+            lastCollabSent = currentCollab;
+
+            if (onThinking) {
+              onThinking({
+                agent: agent.name,
+                role: agent.role,
+                action: 'collaboration',
+                message: currentCollab.substring(0, 150) + (currentCollab.length > 150 ? '...' : ''),
+                collaboration: currentCollab,
+              });
+            }
+          }
+        }
+
+        // Also extract THINKING section (secondary)
         const thinkingMatch = accumulatedText.match(/<THINKING>([\s\S]*?)(?:<\/THINKING>|$)/i);
         if (thinkingMatch && thinkingMatch[1]) {
           const currentThinking = thinkingMatch[1].trim();
@@ -723,9 +744,6 @@ ${collaborationGuidelines}${toolInstructions}`;
             lastThinkingSent = currentThinking;
 
             if (onThinking) {
-              // logger.info(
-              //   `[executeSpecialist] Sending thinking update for ${agent.name}: ${currentThinking.length} chars`,
-              // );
               onThinking({
                 agent: agent.name,
                 role: agent.role,
@@ -782,7 +800,7 @@ ${collaborationGuidelines}${toolInstructions}`;
       `[executeSpecialist] ${agent.name} stream complete. Total: ${accumulatedText.length} chars, ${chunkCount} chunks, toolUse: ${toolUseBlock ? 'yes' : 'no'}`,
     );
 
-    return { text: accumulatedText, toolUse: toolUseBlock, thinkingText, lastThinkingSent };
+    return { text: accumulatedText, toolUse: toolUseBlock, thinkingText, lastThinkingSent, collabText, lastCollabSent };
   };
 
   // Execute initial request
@@ -790,6 +808,8 @@ ${collaborationGuidelines}${toolInstructions}`;
   let accumulatedText = result.text;
   let thinkingText = result.thinkingText;
   let lastThinkingSent = result.lastThinkingSent;
+  let collabText = result.collabText || '';
+  let lastCollabSent = result.lastCollabSent || '';
 
   // Handle tool use if the model requested it
   if (result.toolUse) {
@@ -953,6 +973,12 @@ Since this is marked as "${toolInput.importance}" (not critical), please proceed
       if (continuationResult.lastThinkingSent) {
         lastThinkingSent = continuationResult.lastThinkingSent;
       }
+      if (continuationResult.collabText) {
+        collabText = continuationResult.collabText;
+      }
+      if (continuationResult.lastCollabSent) {
+        lastCollabSent = continuationResult.lastCollabSent;
+      }
 
       logger.info(
         `[executeSpecialist] ${agent.name} continuation complete, accumulated ${accumulatedText.length} chars`,
@@ -968,24 +994,39 @@ Since this is marked as "${toolInput.importance}" (not critical), please proceed
 
   // Final extraction
   const finalThinkingMatch = accumulatedText.match(/<THINKING>([\s\S]*?)<\/THINKING>/i);
+  const finalCollabMatch = accumulatedText.match(/<COLLABORATION_CONVO>([\s\S]*?)<\/COLLABORATION_CONVO>/i);
   const finalOutputMatch = accumulatedText.match(/<OUTPUT>([\s\S]*?)<\/OUTPUT>/i);
 
   let outputText = '';
   if (finalThinkingMatch) {
     thinkingText = finalThinkingMatch[1].trim();
   }
+  if (finalCollabMatch) {
+    collabText = finalCollabMatch[1].trim();
+  }
   if (finalOutputMatch) {
     outputText = finalOutputMatch[1].trim();
   }
 
   logger.info(
-    `[executeSpecialist] ${agent.name} has THINKING tag: ${accumulatedText.includes('<THINKING>')}, has OUTPUT tag: ${accumulatedText.includes('<OUTPUT>')}`,
+    `[executeSpecialist] ${agent.name} has THINKING: ${!!finalThinkingMatch}, COLLABORATION_CONVO: ${!!finalCollabMatch}, OUTPUT: ${!!finalOutputMatch}`,
   );
 
+  // Send final collaboration update if we have it and it wasn't fully sent
+  if (onThinking && collabText && collabText !== lastCollabSent) {
+    onThinking({
+      agent: agent.name,
+      role: agent.role,
+      action: 'collaboration',
+      message: collabText.substring(0, 150) + (collabText.length > 150 ? '...' : ''),
+      collaboration: collabText,
+    });
+  }
+
   // If no tags found, try to use the whole response as output
-  if (!outputText && !thinkingText) {
+  if (!outputText && !thinkingText && !collabText) {
     logger.warn(
-      `[executeSpecialist] No THINKING/OUTPUT tags found for ${agent.name}, using raw response`,
+      `[executeSpecialist] No THINKING/COLLABORATION_CONVO/OUTPUT tags found for ${agent.name}, using raw response`,
     );
     outputText = accumulatedText;
   } else if (!outputText) {
