@@ -25,6 +25,7 @@ class ModelEndHandler {
       throw new Error('collectedUsage must be an array');
     }
     this.collectedUsage = collectedUsage;
+    this.stopReasons = [];
   }
 
   finalize(errorMessage) {
@@ -53,7 +54,19 @@ class ModelEndHandler {
       const agentContext = graph.getAgentContext(metadata);
       const isGoogle = agentContext.provider === Providers.GOOGLE;
       const streamingDisabled = !!agentContext.clientOptions?.disableStreaming;
-      if (data?.output?.additional_kwargs?.stop_reason === 'refusal') {
+      
+      const stopReason = data?.output?.additional_kwargs?.stop_reason;
+      if (stopReason) {
+        logger.info(`[ModelEndHandler] 🔍 stop_reason detected: ${stopReason}, agentId: ${agentContext.agentId}`);
+        
+        this.stopReasons.push({
+          stopReason,
+          agentId: agentContext.agentId,
+          runId: metadata.run_id,
+        });
+      }
+      
+      if (stopReason === 'refusal') {
         const info = { ...data.output.additional_kwargs };
         errorMessage = JSON.stringify({
           type: ErrorTypes.REFUSAL,
