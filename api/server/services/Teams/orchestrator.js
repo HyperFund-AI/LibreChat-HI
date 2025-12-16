@@ -12,10 +12,11 @@ const {
   saveOrchestrationState,
   getOrchestrationState,
   clearOrchestrationState,
-} = require('../../models');
+} = require('~/models');
 const { runAgentToolLoop, runAgentToolLoopStreaming } = require('./agentRunner');
 
 const ORCHESTRATOR_ANTHROPIC_MODEL = 'claude-sonnet-4-5';
+const ALLOW_DEBUG = true;
 
 const zLeadAnalysisSchema = z.object({
   analysis: z.string().describe('Brief analysis of what the objective requires (1-2 sentences)'),
@@ -226,6 +227,17 @@ Guidelines:
   let userContent = `Objective: ${userMessage}\n\nYour Assignment: ${assignment || 'Provide your specialist analysis.'}`;
   if (sharedContext) {
     userContent += `\n\n# Shared Context (Documents Loaded by Lead)\n\n${sharedContext}`;
+  }
+
+  // [DEBUG] Forced Pause Trigger
+  if (ALLOW_DEBUG && userMessage.includes('[FORCE_PAUSE]')) {
+    logger.info('[executeSpecialist] FORCED PAUSE TRIGGERED');
+    return {
+      text: '',
+      messages: messageHistory || [],
+      status: 'PAUSED',
+      question: 'Debug Verification: Confirming pause logic works at ' + new Date().toISOString(),
+    };
   }
 
   // Define Tools
@@ -559,7 +571,7 @@ const resumeOrchestration = async ({
       if (specialistResponse && specialistResponse.status === 'PAUSED') {
         const futureSpecialists = specialists.slice(specialists.indexOf(specialist) + 1);
 
-        return await persistTeamState({
+        const savedResult = await persistTeamState({
           conversationId,
           parentMessageId: state.parentMessageId,
           leadPlan,
@@ -569,6 +581,15 @@ const resumeOrchestration = async ({
           pendingAgents: futureSpecialists,
           sharedContext,
         });
+
+        return {
+          ...savedResult,
+          selectedAgents: [lead, ...specialists].filter(Boolean).map((a) => ({
+            id: a.agentId,
+            name: a.name,
+            role: a.role,
+          })),
+        };
       }
 
       specialistInputs.push({
@@ -615,6 +636,8 @@ const resumeOrchestration = async ({
           activeAgentResponse: specialistResponse,
           pendingAgents: futureSpecialists,
           sharedContext,
+          leadAgent: lead,
+          allSpecialists: specialists,
         });
       }
 
@@ -759,6 +782,8 @@ const orchestrateTeamResponse = async ({
           activeAgentResponse: specialistResponse,
           pendingAgents: remainingSpecialists,
           sharedContext: workPlan.sharedContext,
+          leadAgent: lead,
+          allSpecialists: selectedSpecialists,
         });
 
         return {
@@ -852,6 +877,8 @@ const persistTeamState = async ({
   activeAgentResponse,
   pendingAgents,
   sharedContext,
+  leadAgent,
+  allSpecialists,
 }) => {
   logger.info(`[persistTeamState] Pausing orchestration for ${activeAgent.name}`);
 
@@ -881,7 +908,7 @@ const persistTeamState = async ({
       agentName: s.name,
       status: 'PENDING',
       messages: [],
-      currentOutput: '',
+      currentOutput: '', // Consistent with other states
     });
   });
 
@@ -894,10 +921,20 @@ const persistTeamState = async ({
     sharedContext,
   });
 
+  // Gracefully handle missing lead/specialists
+  const safeAgents = [leadAgent, ...(allSpecialists || [])].filter(Boolean);
+
   return {
     success: true,
     isPaused: true,
     message: activeAgentResponse.question,
+    formattedResponse: '', // Safe empty response
+    // Return full agent objects as expected by frontend/controller
+    selectedAgents: safeAgents.map((a) => ({
+      id: a.agentId,
+      name: a.name,
+      role: a.role,
+    })),
   };
 };
 

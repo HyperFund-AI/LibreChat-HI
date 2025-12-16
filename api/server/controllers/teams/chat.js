@@ -142,20 +142,24 @@ const teamChatController = async (req, res) => {
     }
 
     // Create response message with team responses
+    const responseText = orchestrationResult.isPaused
+      ? orchestrationResult.message
+      : orchestrationResult.formattedResponse;
+
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,
       parentMessageId: userMessageId,
       isCreatedByUser: false,
       user: userId,
-      text: orchestrationResult.formattedResponse,
+      text: responseText,
       sender: 'Team',
       model: 'team-collaboration',
       endpoint: 'teams',
       content: [
         {
           type: ContentTypes.TEXT,
-          [ContentTypes.TEXT]: orchestrationResult.formattedResponse,
+          [ContentTypes.TEXT]: responseText,
         },
       ],
       // Store individual agent responses in metadata
