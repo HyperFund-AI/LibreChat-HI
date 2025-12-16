@@ -27,9 +27,7 @@ When referencing past work or capabilities, use ONLY generic references:
 ║  NEVER mention: SDG&E, Xcel, Jacobs, Heartland, or any other     ║
 ║  specific client names. Use generic references only.              ║
 ╚═══════════════════════════════════════════════════════════════════╝
-`
-
-
+`;
 
 const ORCHESTRATOR_ANTHROPIC_MODEL = 'claude-sonnet-4-5';
 
@@ -82,19 +80,22 @@ const clearOrchestrationState = (conversationId) => {
 };
 
 // Cleanup expired states periodically (every 5 minutes)
-setInterval(() => {
-  const now = Date.now();
-  let cleared = 0;
-  for (const [key, value] of orchestrationStateCache.entries()) {
-    if (now - value.timestamp > ORCHESTRATION_STATE_TTL) {
-      orchestrationStateCache.delete(key);
-      cleared++;
+setInterval(
+  () => {
+    const now = Date.now();
+    let cleared = 0;
+    for (const [key, value] of orchestrationStateCache.entries()) {
+      if (now - value.timestamp > ORCHESTRATION_STATE_TTL) {
+        orchestrationStateCache.delete(key);
+        cleared++;
+      }
     }
-  }
-  if (cleared > 0) {
-    logger.debug(`[orchestrationState] Cleaned up ${cleared} expired states`);
-  }
-}, 5 * 60 * 1000);
+    if (cleared > 0) {
+      logger.debug(`[orchestrationState] Cleaned up ${cleared} expired states`);
+    }
+  },
+  5 * 60 * 1000,
+);
 
 /**
  * Stream text incrementally to simulate typing effect
@@ -357,7 +358,8 @@ const findColleague = (targetRole, availableSpecialists, excludeAgent = null) =>
   const scored = availableSpecialists
     .filter((s) => !excludeAgent || s.name !== excludeAgent.name)
     .map((specialist) => {
-      const searchableText = `${specialist.name} ${specialist.role} ${specialist.expertise || ''} ${specialist.responsibilities || ''}`.toLowerCase();
+      const searchableText =
+        `${specialist.name} ${specialist.role} ${specialist.expertise || ''} ${specialist.responsibilities || ''}`.toLowerCase();
 
       let score = 0;
       for (const term of searchTerms) {
@@ -473,7 +475,9 @@ ${context ? `**Context:** ${context}` : ''}
       accumulatedText += chunk;
 
       // Extract and stream COLLABORATION_CONVO
-      const collabMatch = accumulatedText.match(/<COLLABORATION_CONVO>([\s\S]*?)(?:<\/COLLABORATION_CONVO>|$)/i);
+      const collabMatch = accumulatedText.match(
+        /<COLLABORATION_CONVO>([\s\S]*?)(?:<\/COLLABORATION_CONVO>|$)/i,
+      );
       if (collabMatch && collabMatch[1]) {
         const currentCollab = collabMatch[1].trim();
 
@@ -495,7 +499,9 @@ ${context ? `**Context:** ${context}` : ''}
   }
 
   // Final extraction
-  const finalCollabMatch = accumulatedText.match(/<COLLABORATION_CONVO>([\s\S]*?)<\/COLLABORATION_CONVO>/i);
+  const finalCollabMatch = accumulatedText.match(
+    /<COLLABORATION_CONVO>([\s\S]*?)<\/COLLABORATION_CONVO>/i,
+  );
   if (finalCollabMatch) {
     collabText = finalCollabMatch[1].trim();
   } else {
@@ -814,7 +820,9 @@ ${collaborationGuidelines}${toolInstructions}`;
         chunkCount++;
 
         // Try to extract COLLABORATION_CONVO section as it streams (primary - shown to user)
-        const collabMatch = accumulatedText.match(/<COLLABORATION_CONVO>([\s\S]*?)(?:<\/COLLABORATION_CONVO>|$)/i);
+        const collabMatch = accumulatedText.match(
+          /<COLLABORATION_CONVO>([\s\S]*?)(?:<\/COLLABORATION_CONVO>|$)/i,
+        );
         if (collabMatch && collabMatch[1]) {
           const currentCollab = collabMatch[1].trim();
 
@@ -828,7 +836,8 @@ ${collaborationGuidelines}${toolInstructions}`;
                 agent: agent.name,
                 role: agent.role,
                 action: 'collaboration',
-                message: currentCollab.substring(0, 150) + (currentCollab.length > 150 ? '...' : ''),
+                message:
+                  currentCollab.substring(0, 150) + (currentCollab.length > 150 ? '...' : ''),
                 collaboration: currentCollab,
               });
             }
@@ -902,7 +911,14 @@ ${collaborationGuidelines}${toolInstructions}`;
       `[executeSpecialist] ${agent.name} stream complete. Total: ${accumulatedText.length} chars, ${chunkCount} chunks, toolUse: ${toolUseBlock ? 'yes' : 'no'}`,
     );
 
-    return { text: accumulatedText, toolUse: toolUseBlock, thinkingText, lastThinkingSent, collabText, lastCollabSent };
+    return {
+      text: accumulatedText,
+      toolUse: toolUseBlock,
+      thinkingText,
+      lastThinkingSent,
+      collabText,
+      lastCollabSent,
+    };
   };
 
   // Execute initial request
@@ -938,9 +954,10 @@ ${collaborationGuidelines}${toolInstructions}`;
 
       // Ensure options is an array (model might send it as string or other format)
       const optionsArray = Array.isArray(toolInput.options) ? toolInput.options : [];
-      const optionsText = optionsArray.length > 0
-        ? `\n\nOptions:\n${optionsArray.map((o, i) => `${i + 1}. ${o}`).join('\n')}`
-        : '';
+      const optionsText =
+        optionsArray.length > 0
+          ? `\n\nOptions:\n${optionsArray.map((o, i) => `${i + 1}. ${o}`).join('\n')}`
+          : '';
 
       if (toolInput.importance === 'critical' || toolInput.importance === 'important') {
         // For CRITICAL or IMPORTANT questions, STOP execution and return pending question
@@ -1051,9 +1068,7 @@ Since this is marked as "helpful" (not critical/important), please proceed with 
       ],
     });
 
-    logger.debug(
-      `[executeSpecialist] Tool result content: ${toolResult.substring(0, 100)}...`,
-    );
+    logger.debug(`[executeSpecialist] Tool result content: ${toolResult.substring(0, 100)}...`);
 
     // Determine continuation message based on tool type
     const continuationMessage =
@@ -1108,7 +1123,9 @@ Since this is marked as "helpful" (not critical/important), please proceed with 
 
   // Final extraction
   const finalThinkingMatch = accumulatedText.match(/<THINKING>([\s\S]*?)<\/THINKING>/i);
-  const finalCollabMatch = accumulatedText.match(/<COLLABORATION_CONVO>([\s\S]*?)<\/COLLABORATION_CONVO>/i);
+  const finalCollabMatch = accumulatedText.match(
+    /<COLLABORATION_CONVO>([\s\S]*?)<\/COLLABORATION_CONVO>/i,
+  );
   const finalOutputMatch = accumulatedText.match(/<OUTPUT>([\s\S]*?)<\/OUTPUT>/i);
 
   let outputText = '';
@@ -1192,7 +1209,7 @@ Since this is marked as "helpful" (not critical/important), please proceed with 
 const isArtifactComplete = (text) => {
   const artifactStart = text.indexOf(':::artifact');
   if (artifactStart === -1) return false;
-  
+
   const afterStart = text.substring(artifactStart + 11);
   const closingTagIndex = afterStart.indexOf(':::');
   return closingTagIndex !== -1;
@@ -1201,7 +1218,7 @@ const isArtifactComplete = (text) => {
 const getContinuationContext = (text, maxContextLength = 1500) => {
   const artifactStart = text.indexOf(':::artifact');
   if (artifactStart === -1) return '';
-  
+
   const markdownStart = text.indexOf('```markdown', artifactStart);
   if (markdownStart === -1) {
     const headerEnd = text.indexOf('\n', artifactStart + 11);
@@ -1209,30 +1226,30 @@ const getContinuationContext = (text, maxContextLength = 1500) => {
     const artifactContent = text.substring(headerEnd + 1);
     const lines = artifactContent.split('\n');
     const lastLines = lines.slice(-30).join('\n');
-    return lastLines.length > maxContextLength 
+    return lastLines.length > maxContextLength
       ? lastLines.substring(lastLines.length - maxContextLength)
       : lastLines;
   }
-  
+
   const contentStart = markdownStart + 11;
   const markdownEnd = text.indexOf('```', contentStart);
   const artifactEnd = text.indexOf(':::', markdownEnd !== -1 ? markdownEnd : contentStart);
-  
+
   const endPos = markdownEnd !== -1 && markdownEnd < artifactEnd ? markdownEnd : artifactEnd;
   if (endPos === -1) {
     const artifactContent = text.substring(contentStart);
     const lines = artifactContent.split('\n');
     const lastLines = lines.slice(-30).join('\n');
-    return lastLines.length > maxContextLength 
+    return lastLines.length > maxContextLength
       ? lastLines.substring(lastLines.length - maxContextLength)
       : lastLines;
   }
-  
+
   const artifactContent = text.substring(contentStart, endPos);
   const lines = artifactContent.split('\n');
   const lastLines = lines.slice(-30).join('\n');
-  
-  return lastLines.length > maxContextLength 
+
+  return lastLines.length > maxContextLength
     ? lastLines.substring(lastLines.length - maxContextLength)
     : lastLines;
 };
@@ -1300,35 +1317,45 @@ If there is no deliverable ready - for example, more information from the user w
   while (attempts < maxAttempts) {
     const isContinuation = attempts > 0;
     let messages = [];
-    
+
     if (isContinuation) {
       const artifactStart = fullText.indexOf(':::artifact');
       const hasArtifactStarted = artifactStart !== -1;
-      
+
       let continuationText = fullText;
       if (hasArtifactStarted) {
         const context = getContinuationContext(fullText, 3000);
         const introText = artifactStart > 0 ? fullText.substring(0, artifactStart) : '';
-        const artifactHeader = fullText.substring(artifactStart, fullText.indexOf('\n', artifactStart) + 1);
+        const artifactHeader = fullText.substring(
+          artifactStart,
+          fullText.indexOf('\n', artifactStart) + 1,
+        );
         const markdownStart = fullText.indexOf('```markdown', artifactStart);
-        const afterMarkdown = markdownStart !== -1 ? fullText.substring(markdownStart + 12, markdownStart + 12 + 100) : '';
-        continuationText = introText + artifactHeader + (markdownStart !== -1 ? '```markdown\n' : '') + (context || fullText.substring(Math.max(0, fullText.length - 3000)));
+        const afterMarkdown =
+          markdownStart !== -1
+            ? fullText.substring(markdownStart + 12, markdownStart + 12 + 100)
+            : '';
+        continuationText =
+          introText +
+          artifactHeader +
+          (markdownStart !== -1 ? '```markdown\n' : '') +
+          (context || fullText.substring(Math.max(0, fullText.length - 3000)));
       }
-      
+
       messages.push({
         role: 'assistant',
         content: continuationText,
       });
-      
+
       const continuationInstruction = hasArtifactStarted
         ? 'CRITICAL: The artifact has ALREADY STARTED. Do NOT repeat the :::artifact tag or the ```markdown tag. Continue ONLY the document content from where it was cut off. Simply continue writing the markdown content. When finished, close with ``` and ::: tags.'
         : 'Continue generating from where you left off. Complete the document and make sure to properly close the artifact tag with ::: at the end.';
-      
+
       messages.push({
         role: 'user',
         content: continuationInstruction,
       });
-      
+
       if (onThinking) {
         onThinking({
           agent: lead.name,
@@ -1357,29 +1384,33 @@ If there is no deliverable ready - for example, more information from the user w
 
     for await (const event of stream) {
       lastEvent = event;
-      
+
       if (event.type === 'content_block_delta' && event.delta?.text) {
         let chunk = event.delta.text;
-        
+
         if (isContinuation && isFirstChunk && !artifactHeaderSkipped) {
           const artifactStartPattern = /^[\s\n]*:::artifact[^\n]*\n?/;
           const markdownStartPattern = /^[\s\n]*```markdown[\s\n]*/;
-          
+
           if (artifactStartPattern.test(chunk)) {
             chunk = chunk.replace(artifactStartPattern, '');
             artifactHeaderSkipped = true;
-            logger.info('[synthesizeDeliverableStreaming] Removed duplicate artifact header from continuation');
+            logger.info(
+              '[synthesizeDeliverableStreaming] Removed duplicate artifact header from continuation',
+            );
           }
-          
+
           if (markdownStartPattern.test(chunk) && fullText.includes('```markdown')) {
             chunk = chunk.replace(markdownStartPattern, '');
             artifactHeaderSkipped = true;
-            logger.info('[synthesizeDeliverableStreaming] Removed duplicate markdown tag from continuation');
+            logger.info(
+              '[synthesizeDeliverableStreaming] Removed duplicate markdown tag from continuation',
+            );
           }
-          
+
           isFirstChunk = false;
         }
-        
+
         if (chunk) {
           currentChunk += chunk;
           fullText += chunk;
@@ -1388,22 +1419,27 @@ If there is no deliverable ready - for example, more information from the user w
           }
         }
       }
-      
+
       if (event.type === 'message_stop' || event.type === 'message_delta') {
         finishReason = event.finish_reason || event.delta?.stop_reason;
       }
     }
 
     const isComplete = isArtifactComplete(fullText);
-    const needsContinuation = finishReason === 'max_tokens' || (!isComplete && currentChunk.length > 0);
-    
+    const needsContinuation =
+      finishReason === 'max_tokens' || (!isComplete && currentChunk.length > 0);
+
     if (isComplete || !needsContinuation || attempts >= maxAttempts - 1) {
-      logger.info(`[synthesizeDeliverableStreaming] Artifact complete or no continuation needed, breaking (attempt ${attempts})`);
+      logger.info(
+        `[synthesizeDeliverableStreaming] Artifact complete or no continuation needed, breaking (attempt ${attempts})`,
+      );
       break;
     }
-    
+
     attempts++;
-    logger.info(`[synthesizeDeliverableStreaming] Artifact incomplete, continuing (attempt ${attempts})`);
+    logger.info(
+      `[synthesizeDeliverableStreaming] Artifact incomplete, continuing (attempt ${attempts})`,
+    );
   }
 
   if (!isArtifactComplete(fullText) && fullText.includes(':::artifact')) {
@@ -1499,8 +1535,7 @@ const resumeOrchestration = async ({
 
     // Re-run the stopped specialist with the user's answer as additional context
     const idx = specialists.indexOf(stoppedSpecialist) + 1;
-    const assignment =
-      workPlan.assignments?.[idx.toString()] || workPlan.assignments?.[idx] || '';
+    const assignment = workPlan.assignments?.[idx.toString()] || workPlan.assignments?.[idx] || '';
 
     // Build context that includes the original question and user's answer
     const resumeContext = `
@@ -1527,9 +1562,7 @@ Please continue your analysis incorporating this information.
 
     // Check if this specialist has another pending question
     if (specialistResult.pendingQuestion) {
-      logger.info(
-        `[resumeOrchestration] ${stoppedSpecialist.name} has another pending question`,
-      );
+      logger.info(`[resumeOrchestration] ${stoppedSpecialist.name} has another pending question`);
       pendingUserQuestion = specialistResult.pendingQuestion;
       newStoppedAtIndex = stoppedAtSpecialistIndex;
     } else {
@@ -1650,11 +1683,13 @@ Please continue your analysis incorporating this information.
       saveOrchestrationState(conversationId, stateToSave);
     }
 
-    const optionsArray = Array.isArray(pendingUserQuestion.options) ? pendingUserQuestion.options : [];
-    const optionsText = optionsArray.length > 0
-      ? '\n\n**Options:**\n' +
-        optionsArray.map((o, i) => `${i + 1}. ${o}`).join('\n')
-      : '';
+    const optionsArray = Array.isArray(pendingUserQuestion.options)
+      ? pendingUserQuestion.options
+      : [];
+    const optionsText =
+      optionsArray.length > 0
+        ? '\n\n**Options:**\n' + optionsArray.map((o, i) => `${i + 1}. ${o}`).join('\n')
+        : '';
 
     const questionMessage = `**${pendingUserQuestion.agent}** (${pendingUserQuestion.agentRole}) needs additional clarification:
 
@@ -1745,7 +1780,9 @@ const orchestrateTeamResponse = async ({
   onStream,
 }) => {
   try {
-    logger.info(`[orchestrateTeamResponse] Starting with ${teamAgents.length} agents, conversationId: ${conversationId}`);
+    logger.info(
+      `[orchestrateTeamResponse] Starting with ${teamAgents.length} agents, conversationId: ${conversationId}`,
+    );
 
     const apiKey = config?.endpoints?.anthropic?.apiKey || process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
@@ -1944,11 +1981,13 @@ const orchestrateTeamResponse = async ({
       }
 
       // Format the question for display
-      const optionsArray = Array.isArray(pendingUserQuestion.options) ? pendingUserQuestion.options : [];
-      const optionsText = optionsArray.length > 0
-        ? '\n\n**Options:**\n' +
-          optionsArray.map((o, i) => `${i + 1}. ${o}`).join('\n')
-        : '';
+      const optionsArray = Array.isArray(pendingUserQuestion.options)
+        ? pendingUserQuestion.options
+        : [];
+      const optionsText =
+        optionsArray.length > 0
+          ? '\n\n**Options:**\n' + optionsArray.map((o, i) => `${i + 1}. ${o}`).join('\n')
+          : '';
 
       const questionMessage = `**${pendingUserQuestion.agent}** (${pendingUserQuestion.agentRole}) needs clarification before proceeding:
 

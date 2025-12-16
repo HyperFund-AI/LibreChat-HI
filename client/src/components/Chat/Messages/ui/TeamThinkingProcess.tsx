@@ -11,101 +11,111 @@ type TeamThinkingProcessProps = {
 };
 
 // Animated entry component (reused for thinking and collaboration)
-const AnimatedEntry = memo(({
-  agent,
-  content,
-  type = 'thinking',
-}: {
-  agent: string;
-  content: string;
-  type?: 'thinking' | 'collaboration';
-}) => {
-  const [isVisible, setIsVisible] = useState(false);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const prevLengthRef = useRef(0);
-  const timeoutRef = useRef<NodeJS.Timeout>();
+const AnimatedEntry = memo(
+  ({
+    agent,
+    content,
+    type = 'thinking',
+  }: {
+    agent: string;
+    content: string;
+    type?: 'thinking' | 'collaboration';
+  }) => {
+    const [isVisible, setIsVisible] = useState(false);
+    const [isStreaming, setIsStreaming] = useState(false);
+    const prevLengthRef = useRef(0);
+    const timeoutRef = useRef<NodeJS.Timeout>();
 
-  const isCollaboration = type === 'collaboration';
-  const accentColor = isCollaboration ? 'emerald' : 'amber';
+    const isCollaboration = type === 'collaboration';
+    const accentColor = isCollaboration ? 'emerald' : 'amber';
 
-  useEffect(() => {
-    if (content && content.length > 0 && !isVisible) {
-      setIsVisible(true);
-    }
-
-    const currentLength = content.length;
-    const prevLength = prevLengthRef.current;
-
-    if (currentLength > prevLength) {
-      setIsStreaming(true);
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
+    useEffect(() => {
+      if (content && content.length > 0 && !isVisible) {
+        setIsVisible(true);
       }
-      timeoutRef.current = setTimeout(() => {
-        setIsStreaming(false);
-      }, 500);
-    }
 
-    prevLengthRef.current = currentLength;
-  }, [content, isVisible]);
+      const currentLength = content.length;
+      const prevLength = prevLengthRef.current;
 
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
+      if (currentLength > prevLength) {
+        setIsStreaming(true);
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+        }
+        timeoutRef.current = setTimeout(() => {
+          setIsStreaming(false);
+        }, 500);
       }
-    };
-  }, []);
 
-  return (
-    <div
-      className={cn(
-        'flex flex-col gap-2 transition-all duration-500 ease-out',
-        isVisible ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0',
-      )}
-    >
-      <div className="flex items-center gap-2">
-        <div className={cn(
-          'h-2 w-2 animate-pulse rounded-full',
-          isCollaboration ? 'bg-emerald-500' : 'bg-amber-500'
-        )} />
-        <span className={cn(
-          'text-xs font-semibold transition-colors duration-200',
-          isCollaboration
-            ? 'text-emerald-700 dark:text-emerald-400'
-            : 'text-gray-600 dark:text-gray-400'
-        )}>
-          {agent}
-        </span>
-        {isCollaboration && (
-          <MessageSquare className="h-3 w-3 text-emerald-500" />
-        )}
-      </div>
+      prevLengthRef.current = currentLength;
+    }, [content, isVisible]);
+
+    useEffect(() => {
+      return () => {
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+        }
+      };
+    }, []);
+
+    return (
       <div
         className={cn(
-          'prose prose-sm dark:prose-invert max-w-none transition-all duration-300 ease-in-out',
-          'ml-4 border-l-2 pl-3',
-          isCollaboration
-            ? 'text-gray-800 dark:text-gray-200'
-            : 'text-gray-600 dark:text-gray-400',
-          isStreaming
-            ? isCollaboration ? 'border-emerald-500/70' : 'border-amber-500/50'
-            : isCollaboration ? 'border-emerald-500/40' : 'border-amber-500/30',
+          'flex flex-col gap-2 transition-all duration-500 ease-out',
+          isVisible ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0',
         )}
       >
-        <div className="transition-opacity duration-200">
-          <MarkdownLite content={content} codeExecution={false} />
+        <div className="flex items-center gap-2">
+          <div
+            className={cn(
+              'h-2 w-2 animate-pulse rounded-full',
+              isCollaboration ? 'bg-emerald-500' : 'bg-amber-500',
+            )}
+          />
+          <span
+            className={cn(
+              'text-xs font-semibold transition-colors duration-200',
+              isCollaboration
+                ? 'text-emerald-700 dark:text-emerald-400'
+                : 'text-gray-600 dark:text-gray-400',
+            )}
+          >
+            {agent}
+          </span>
+          {isCollaboration && <MessageSquare className="h-3 w-3 text-emerald-500" />}
         </div>
-        {isStreaming && (
-          <span className={cn(
-            'ml-1 inline-block h-4 w-0.5 animate-pulse align-middle',
-            isCollaboration ? 'bg-emerald-500/70' : 'bg-amber-500/70'
-          )} />
-        )}
+        <div
+          className={cn(
+            'prose prose-sm dark:prose-invert max-w-none transition-all duration-300 ease-in-out',
+            'ml-4 border-l-2 pl-3',
+            isCollaboration
+              ? 'text-gray-800 dark:text-gray-200'
+              : 'text-gray-600 dark:text-gray-400',
+            isStreaming
+              ? isCollaboration
+                ? 'border-emerald-500/70'
+                : 'border-amber-500/50'
+              : isCollaboration
+                ? 'border-emerald-500/40'
+                : 'border-amber-500/30',
+          )}
+        >
+          <div className="transition-opacity duration-200">
+            <MarkdownLite content={content} codeExecution={false} />
+          </div>
+          {isStreaming && (
+            <span
+              className={cn(
+                'ml-1 inline-block h-4 w-0.5 animate-pulse align-middle',
+                isCollaboration ? 'bg-emerald-500/70' : 'bg-amber-500/70',
+              )}
+            />
+          )}
+        </div>
       </div>
-    </div>
-  );
-});
+    );
+  },
+);
 
 AnimatedEntry.displayName = 'AnimatedEntry';
 
@@ -145,7 +155,8 @@ const TeamThinkingProcess = memo(({ isSubmitting }: TeamThinkingProcessProps) =>
   }
 
   // Check if we have any collaboration activity
-  const hasCollaborationData = collaboration.isActive || collaborationEntries.length > 0 || thinkingEntries.length > 0;
+  const hasCollaborationData =
+    collaboration.isActive || collaborationEntries.length > 0 || thinkingEntries.length > 0;
 
   return (
     <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-500/10">
@@ -198,12 +209,19 @@ const TeamThinkingProcess = memo(({ isSubmitting }: TeamThinkingProcessProps) =>
               {thinkingEntries.length > 0 && (
                 <div className="mt-4 border-t border-gray-200 pt-3 dark:border-gray-700">
                   <button
-                    onClick={(e) => { e.stopPropagation(); setShowThinking(!showThinking); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowThinking(!showThinking);
+                    }}
                     className="mb-2 flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
                   >
                     <Brain className="h-3 w-3" />
                     <span>Internal Reasoning ({thinkingEntries.length})</span>
-                    {showThinking ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    {showThinking ? (
+                      <ChevronUp className="h-3 w-3" />
+                    ) : (
+                      <ChevronDown className="h-3 w-3" />
+                    )}
                   </button>
                   {showThinking && (
                     <div className="flex flex-col gap-3 opacity-70">
