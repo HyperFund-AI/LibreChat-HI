@@ -6,7 +6,13 @@ const {
   readKnowledgeDocumentTool,
   createListDocumentsTool,
   createSearchDocumentsTool,
+  createAskUserTool,
 } = require('./tools');
+const {
+  saveOrchestrationState,
+  getOrchestrationState,
+  clearOrchestrationState,
+} = require('../../models');
 const { runAgentToolLoop, runAgentToolLoopStreaming } = require('./agentRunner');
 
 const ORCHESTRATOR_ANTHROPIC_MODEL = 'claude-sonnet-4-5';
@@ -170,6 +176,7 @@ const executeSpecialist = async ({
   apiKey,
   onThinking,
   conversationId,
+  messageHistory,
 }) => {
   logger.info(
     `[executeSpecialist] Called for ${agent.name}, onThinking callback: ${onThinking ? 'present' : 'MISSING'}`,
@@ -226,16 +233,19 @@ Guidelines:
     readKnowledgeDocumentTool,
     createListDocumentsTool(conversationId),
     createSearchDocumentsTool(conversationId),
+    createAskUserTool(),
   ];
 
   logger.info(`[executeSpecialist] Starting streaming loop for ${agent.name}`);
 
+  const initialMessages = messageHistory || [{ role: 'user', content: userContent }];
+
   // Using streaming loop to allow tools + tokens
-  const { result: rawResult } = await runAgentToolLoopStreaming({
+  const { result: rawResult, messages: finalMessages } = await runAgentToolLoopStreaming({
     apiKey,
     model: agent.model || ORCHESTRATOR_ANTHROPIC_MODEL,
     systemPrompt,
-    messages: [{ role: 'user', content: userContent }],
+    messages: initialMessages,
     tools,
     agentName: agent.name,
     onThinking,
@@ -275,6 +285,12 @@ Guidelines:
     },
     toolChoice: 'auto',
   });
+
+  // Check for pause
+  if (rawResult && rawResult.status === 'PAUSED') {
+    logger.info(`[executeSpecialist] ${agent.name} PAUSED to ask: ${rawResult.question}`);
+    return { ...rawResult, messages: finalMessages }; // Propagate pause up with history
+  }
 
   // Final text is in the result (or fallback to accumulated)
   const finalFullText = rawResult || accumulatedText;
@@ -340,8 +356,12 @@ Guidelines:
     `[executeSpecialist] ${agent.name} completed - thinking: ${thinkingText.length} chars, output: ${outputText.length} chars`,
   );
 
-  // Return only the output part (or fallback to accumulated text)
-  return outputText || accumulatedText;
+  // Return structured response
+  return {
+    text: outputText || accumulatedText,
+    messages: finalMessages || [],
+    status: 'COMPLETED',
+  };
 };
 
 /**
@@ -439,6 +459,263 @@ If there is no deliverable ready - for example, more information from the user w
   return fullText;
 };
 
+const resumeOrchestration = async ({
+  conversationId,
+  userResponseText,
+  teamAgents,
+  apiKey,
+  onAgentStart,
+  onAgentComplete,
+  onThinking,
+  onStream,
+}) => {
+  const state = await getOrchestrationState(conversationId);
+  if (!state || state.status !== 'PAUSED') {
+    throw new Error('No paused orchestration state found');
+  }
+
+  logger.info(`[resumeOrchestration] Resuming conversation ${conversationId}`);
+
+  const { leadPlan, specialistStates, sharedContext } = state;
+  const lead = teamAgents.find((a) => parseInt(a.tier) === 3) || teamAgents[0];
+  const specialists = teamAgents.filter((a) => parseInt(a.tier) !== 3);
+
+  const specialistInputs = [];
+
+  // Restore completed inputs
+  specialistStates
+    .filter((s) => s.status === 'COMPLETED')
+    .forEach((s) => {
+      const agent = teamAgents.find((a) => a.name === s.agentName);
+      if (agent) {
+        specialistInputs.push({
+          name: s.agentName,
+          role: agent.role,
+          response: s.currentOutput,
+        });
+      }
+    });
+
+  // Find the paused agent
+  const pausedState = specialistStates.find((s) => s.status === 'PAUSED');
+
+  // Logic to process the paused agent + subsequent agents
+  // Since we need to run them sequentially, we determine the starting index
+  let startIndex = 0;
+  if (pausedState) {
+    const pausedAgentIndex = specialists.findIndex((s) => s.name === pausedState.agentName);
+    if (pausedAgentIndex !== -1) startIndex = pausedAgentIndex;
+  }
+
+  const agentsToProcess = specialists.slice(startIndex);
+
+  for (const specialist of agentsToProcess) {
+    // Check if this is the paused/resuming agent
+    const isResuming = pausedState && specialist.name === pausedState.agentName;
+
+    // Handle Resuming Agent
+    if (isResuming) {
+      logger.info(`[resumeOrchestration] Resuming agent ${specialist.name}`);
+      if (onAgentStart) onAgentStart(specialist);
+
+      // Hydrate History with User Answer
+      const history = [...pausedState.messages]; // Clone
+      const lastMsg = history[history.length - 1];
+      let toolCallId = 'unknown';
+      if (lastMsg.role === 'assistant' && Array.isArray(lastMsg.content)) {
+        const toolBlock = lastMsg.content.find(
+          (c) => c.type === 'tool_use' && c.name === 'ask_user',
+        );
+        if (toolBlock) toolCallId = toolBlock.id;
+      }
+
+      history.push({
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: toolCallId,
+            content: userResponseText,
+          },
+        ],
+      });
+
+      const idx = specialists.indexOf(specialist) + 1;
+      const assignment =
+        leadPlan.assignments?.[idx.toString()] || leadPlan.assignments?.[idx] || '';
+
+      const specialistResponse = await executeSpecialist({
+        agent: specialist,
+        assignment,
+        userMessage: 'RESUMED',
+        apiKey,
+        onThinking,
+        sharedContext,
+        conversationId,
+        messageHistory: history,
+      });
+
+      // Check for recursive pause
+      if (specialistResponse && specialistResponse.status === 'PAUSED') {
+        // Save state and return pause
+        // ... (simplified reuse of saving logic needed here ideally, but for now we assume one step or manual fix)
+        // Let's implement basic save for recursive pause
+        const newSpecialistStates = [];
+        // Add completed
+        specialistInputs.forEach((input) => {
+          newSpecialistStates.push({
+            agentName: input.name,
+            status: 'COMPLETED',
+            messages: [],
+            currentOutput: input.response,
+          });
+        });
+        // Add this new paused one
+        newSpecialistStates.push({
+          agentName: specialist.name,
+          status: 'PAUSED',
+          messages: specialistResponse.messages,
+          interruptQuestion: specialistResponse.question,
+        });
+        // Add pending
+        const futureSpecialists = specialists.slice(specialists.indexOf(specialist) + 1);
+        futureSpecialists.forEach((s) => {
+          newSpecialistStates.push({
+            agentName: s.name,
+            status: 'PENDING',
+            messages: [],
+            currentOutput: '',
+          });
+        });
+
+        await saveOrchestrationState({
+          conversationId,
+          parentMessageId: state.parentMessageId,
+          status: 'PAUSED',
+          leadPlan,
+          specialistStates: newSpecialistStates,
+          sharedContext,
+        });
+
+        return { success: true, isPaused: true, message: specialistResponse.question };
+      }
+
+      specialistInputs.push({
+        name: specialist.name,
+        role: specialist.role,
+        response: specialistResponse.text,
+        messages: specialistResponse.messages,
+      });
+
+      if (onAgentComplete)
+        onAgentComplete({
+          agentName: specialist.name,
+          agentRole: specialist.role,
+          response: specialistResponse,
+        });
+    } else {
+      // Normal pending agent execution
+      logger.info(`[resumeOrchestration] executing pending agent ${specialist.name}`);
+      if (onAgentStart) onAgentStart(specialist);
+
+      const idx = specialists.indexOf(specialist) + 1;
+      const assignment =
+        leadPlan.assignments?.[idx.toString()] || leadPlan.assignments?.[idx] || '';
+
+      const specialistResponse = await executeSpecialist({
+        agent: specialist,
+        assignment,
+        userMessage: 'RESUMED_PENDING', // Or enrich message again
+        apiKey,
+        onThinking,
+        sharedContext,
+        conversationId,
+      });
+
+      // Check for pause
+      if (specialistResponse && specialistResponse.status === 'PAUSED') {
+        const newSpecialistStates = [];
+        specialistInputs.forEach((input) => {
+          newSpecialistStates.push({
+            agentName: input.name,
+            status: 'COMPLETED',
+            messages: [],
+            currentOutput: input.response,
+          });
+        });
+        newSpecialistStates.push({
+          agentName: specialist.name,
+          status: 'PAUSED',
+          messages: specialistResponse.messages,
+          interruptQuestion: specialistResponse.question,
+        });
+        const futureSpecialists = specialists.slice(specialists.indexOf(specialist) + 1);
+        futureSpecialists.forEach((s) => {
+          newSpecialistStates.push({
+            agentName: s.name,
+            status: 'PENDING',
+            messages: [],
+            currentOutput: '',
+          });
+        });
+
+        await saveOrchestrationState({
+          conversationId,
+          parentMessageId: state.parentMessageId,
+          status: 'PAUSED',
+          leadPlan,
+          specialistStates: newSpecialistStates,
+          sharedContext,
+        });
+
+        return { success: true, isPaused: true, message: specialistResponse.question };
+      }
+
+      specialistInputs.push({
+        name: specialist.name,
+        role: specialist.role,
+        response: specialistResponse.text,
+        messages: specialistResponse.messages,
+      });
+
+      if (onAgentComplete)
+        onAgentComplete({
+          agentName: specialist.name,
+          agentRole: specialist.role,
+          response: specialistResponse.text,
+        });
+    }
+  }
+
+  // Synthesis
+  if (onAgentStart) onAgentStart({ ...lead, phase: 'synthesis' });
+
+  const finalDeliverable = await synthesizeDeliverableStreaming({
+    lead,
+    userMessage: leadPlan.userMessage || 'Objective',
+    specialistInputs,
+    deliverableOutline: leadPlan.deliverableOutline,
+    apiKey,
+    onThinking,
+    onStream,
+  });
+
+  const timestamp = new Date().toISOString().split('T')[0];
+  const teamCredits = `\n\n---\n\n_**Team:** ${lead.name} (Lead)${specialists.length > 0 ? ', ' + specialists.map((s) => s.name).join(', ') : ''} | ${timestamp}_`;
+  const formattedResponse = finalDeliverable + teamCredits;
+
+  if (onStream) onStream(teamCredits);
+
+  // Clear state
+  await clearOrchestrationState(conversationId);
+
+  return {
+    success: true,
+    formattedResponse,
+    responses: [], // Fill if needed
+  };
+};
+
 /**
  * Main orchestration function with visible collaboration
  */
@@ -450,6 +727,7 @@ const orchestrateTeamResponse = async ({
   knowledgeContext,
   config,
   conversationId,
+  parentMessageId,
   onAgentStart,
   onAgentComplete,
   onThinking,
@@ -516,26 +794,84 @@ const orchestrateTeamResponse = async ({
         apiKey,
         onThinking,
         sharedContext: workPlan.sharedContext,
+        conversationId,
       });
 
+      // Handle Pause
+      if (specialistResponse && specialistResponse.status === 'PAUSED') {
+        logger.info(`[orchestrateTeamResponse] Orchestration PAUSED by ${specialist.name}`);
+
+        // Save state to DB
+        const specialistStates = [];
+
+        // Add already completed specialists
+        specialistInputs.forEach((input) => {
+          specialistStates.push({
+            agentName: input.name,
+            status: 'COMPLETED',
+            messages: input.messages || [], // Persist history
+            currentOutput: input.response,
+          });
+        });
+
+        // Add the paused specialist
+        specialistStates.push({
+          agentName: specialist.name,
+          status: 'PAUSED',
+          messages: specialistResponse.messages,
+          interruptQuestion: specialistResponse.question,
+        });
+
+        // Add pending specialists
+        const remainingSpecialists = selectedSpecialists.slice(
+          selectedSpecialists.indexOf(specialist) + 1,
+        );
+        remainingSpecialists.forEach((s) => {
+          specialistStates.push({
+            agentName: s.name,
+            status: 'PENDING',
+            messages: [],
+            currentOutput: '',
+          });
+        });
+
+        await saveOrchestrationState({
+          conversationId,
+          parentMessageId: parentMessageId,
+          status: 'PAUSED',
+          leadPlan: workPlan,
+          specialistStates,
+          sharedContext: workPlan.sharedContext,
+        });
+
+        return {
+          success: true,
+          isPaused: true,
+          message: specialistResponse.question,
+          responses,
+        };
+      }
+
+      // Success Case
       specialistInputs.push({
         name: specialist.name,
         role: specialist.role,
-        response: specialistResponse,
+        response: specialistResponse.text, // Store text for synthesis
+        messages: specialistResponse.messages, // Store history for state
       });
 
       responses.push({
         agentId: specialist.agentId,
         agentName: specialist.name,
         agentRole: specialist.role,
-        response: specialistResponse,
+        response: specialistResponse.text,
       });
 
       if (onAgentComplete)
         onAgentComplete({
           agentName: specialist.name,
           agentRole: specialist.role,
-          response: specialistResponse,
+          response: specialistResponse.text,
         });
     }
 
@@ -598,5 +934,6 @@ module.exports = {
   executeSpecialist,
   synthesizeDeliverableStreaming,
   orchestrateTeamResponse,
+  resumeOrchestration,
   shouldUseTeamOrchestration,
 };

@@ -107,15 +107,21 @@ const createSearchDocumentsTool = (conversationId) => ({
         // It does NOT join with the main doc to get the title.
         // I should probably fetch titles here to be helpful.
         const { TeamKnowledge } = require('~/models/TeamKnowledge');
-        const docIds = [...new Set(chunks.map(c => c.documentId))];
-        const titles = await TeamKnowledge.find({ documentId: { $in: docIds } }).select('documentId title').lean();
+        const docIds = [...new Set(chunks.map((c) => c.documentId))];
+        const titles = await TeamKnowledge.find({ documentId: { $in: docIds } })
+          .select('documentId title')
+          .lean();
         const titleMap = titles.reduce((acc, t) => ({ ...acc, [t.documentId]: t.title }), {});
 
-        const formattedResults = chunks.map((chunk, i) => {
-          const title = titleMap[chunk.documentId] || 'Unknown Document';
-          const rangeInfo = chunk.metadata?.loc?.lines ? ` (Lines ${chunk.metadata.loc.lines.from}-${chunk.metadata.loc.lines.to})` : '';
-          return `### Search Result ${i + 1}: "${title}" (ID: ${chunk.documentId})${rangeInfo}\n${chunk.text}`;
-        }).join('\n\n');
+        const formattedResults = chunks
+          .map((chunk, i) => {
+            const title = titleMap[chunk.documentId] || 'Unknown Document';
+            const rangeInfo = chunk.metadata?.loc?.lines
+              ? ` (Lines ${chunk.metadata.loc.lines.from}-${chunk.metadata.loc.lines.to})`
+              : '';
+            return `### Search Result ${i + 1}: "${title}" (ID: ${chunk.documentId})${rangeInfo}\n${chunk.text}`;
+          })
+          .join('\n\n');
 
         return `### Search Results for "${query}":\n\n${formattedResults}`;
       } catch (error) {
@@ -126,8 +132,25 @@ const createSearchDocumentsTool = (conversationId) => ({
   usage: 'find relevant information in the knowledge base.',
 });
 
+const createAskUserTool = () => ({
+  name: 'ask_user',
+  description:
+    'Ask the user a clarifying question to proceed. CAUTION: This pauses execution until the user replies. Use only if absolutely necessary to resolve ambiguity.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      question: {
+        type: 'string',
+        description: 'The question to ask the user.',
+      },
+    },
+    required: ['question'],
+  },
+});
+
 module.exports = {
   readKnowledgeDocumentTool,
   createListDocumentsTool,
   createSearchDocumentsTool,
+  createAskUserTool,
 };

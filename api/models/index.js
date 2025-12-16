@@ -29,6 +29,11 @@ const {
   deleteKnowledgeDocument,
   clearKnowledge,
 } = require('./TeamKnowledge');
+const {
+  saveOrchestrationState,
+  getOrchestrationState,
+  clearOrchestrationState,
+} = require('./TeamOrchestrationState');
 const { File } = require('~/db/models');
 
 const seedDatabase = async () => {
@@ -72,6 +77,10 @@ module.exports = {
   getKnowledgeDocument,
   deleteKnowledgeDocument,
   clearKnowledge,
+
+  saveOrchestrationState,
+  getOrchestrationState,
+  clearOrchestrationState,
 
   Files: File,
 };

@@ -20,6 +20,8 @@ const {
 } = require('~/server/services/Teams');
 const { getTeamAgents, getTeamInfo, saveTeamAgents } = require('~/models/Conversation');
 const { getMessages } = require('~/models');
+const { getOrchestrationState } = require('~/models');
+const { resumeOrchestration } = require('~/server/services/Teams/orchestrator');
 
 function createCloseHandler(abortController) {
   return function (manual) {
@@ -111,83 +113,177 @@ async function handleTeamOrchestration(
     let streamedText = '';
 
     // Orchestrate team response with callbacks
-    const orchestrationResult = await orchestrateTeamResponse({
-      userMessage: text,
-      teamAgents,
-      conversationId,
-      conversationHistory,
-      fileContext: '',
-      knowledgeContext,
-      config: req.config,
+    // Check for PAUSED state to RESUME
+    const pausedState = await getOrchestrationState(conversationId);
+    let orchestrationResult;
 
-      // Show "thinking" process - team collaboration
-      onThinking: (thinking) => {
-        // Log ALL thinking events for debugging
-        logger.info(`[handleTeamOrchestration] onThinking callback called:`, {
-          agent: thinking.agent,
-          action: thinking.action,
-          hasThinking: !!thinking.thinking,
-          thinkingLength: thinking.thinking?.length || 0,
-          messagePreview: thinking.message?.substring(0, 50),
-        });
+    if (pausedState && pausedState.status === 'PAUSED') {
+      logger.info(`[handleTeamOrchestration] Resuming paused orchestration for ${conversationId}`);
+      orchestrationResult = await resumeOrchestration({
+        conversationId,
+        userResponseText: text,
+        teamAgents,
+        apiKey: req.config?.endpoints?.anthropic?.apiKey || process.env.ANTHROPIC_API_KEY,
+        onAgentStart: (agent) => {
+          sendEvent(res, {
+            event: 'on_agent_start',
+            data: {
+              agentId: agent.agentId,
+              agentName: agent.name,
+              agentRole: agent.role,
+              phase: agent.phase || 'working',
+            },
+          });
+        },
+        onAgentComplete: (agentResponse) => {
+          sendEvent(res, {
+            event: 'on_agent_complete',
+            data: {
+              agentName: agentResponse.agentName,
+              agentRole: agentResponse.agentRole,
+            },
+          });
+        },
+        onThinking: (thinking) => {
+          // ... duplicate thinking logic or refactor (omitted for brevity, assuming standard handlers needed)
+          // Ideally we should refactor callbacks to a helper const callbacks = createCallbacks(res)
+          const eventPayload = {
+            event: 'on_thinking',
+            data: {
+              agent: thinking.agent,
+              role: thinking.role || '',
+              action: thinking.action,
+              message: thinking.message,
+              thinking: thinking.thinking || thinking.message,
+            },
+          };
+          sendEvent(res, eventPayload);
+        },
+        onStream: (chunk) => {
+          streamedText += chunk;
+          sendEvent(res, {
+            type: ContentTypes.TEXT,
+            text: streamedText,
+            index: 0,
+            messageId: responseMessageId,
+            conversationId: conversationId,
+          });
+        }
+      });
 
-        // Send as a "step" event to show progress
-        const eventPayload = {
-          event: 'on_thinking',
-          data: {
+    } else {
+      // STANDARD FLOW
+      orchestrationResult = await orchestrateTeamResponse({
+        userMessage: text,
+        teamAgents,
+        conversationId,
+        conversationHistory,
+        parentMessageId: userMessageId, // We must pass this now!
+        fileContext: '',
+        knowledgeContext,
+        config: req.config,
+
+        // callbacks
+        onThinking: (thinking) => {
+          // ... original logging ...
+          logger.info(`[handleTeamOrchestration] onThinking callback called:`, {
             agent: thinking.agent,
-            role: thinking.role || '',
             action: thinking.action,
-            message: thinking.message,
-            thinking: thinking.thinking || thinking.message, // Include full thinking text if available
-          },
-        };
+            hasThinking: !!thinking.thinking,
+            thinkingLength: thinking.thinking?.length || 0,
+            messagePreview: thinking.message?.substring(0, 50),
+          });
 
-        logger.info(
-          `[handleTeamOrchestration] Sending event via SSE:`,
-          JSON.stringify(eventPayload).substring(0, 200),
-        );
-        sendEvent(res, eventPayload);
-      },
+          const eventPayload = {
+            event: 'on_thinking',
+            data: {
+              agent: thinking.agent,
+              role: thinking.role || '',
+              action: thinking.action,
+              message: thinking.message,
+              thinking: thinking.thinking || thinking.message,
+            },
+          };
+          sendEvent(res, eventPayload);
+        },
 
-      onAgentStart: (agent) => {
-        // Show which agent is starting
-        sendEvent(res, {
-          event: 'on_agent_start',
-          data: {
-            agentId: agent.agentId,
-            agentName: agent.name,
-            agentRole: agent.role,
-            phase: agent.phase || 'working',
-          },
-        });
-      },
+        onAgentStart: (agent) => {
+          sendEvent(res, {
+            event: 'on_agent_start',
+            data: {
+              agentId: agent.agentId,
+              agentName: agent.name,
+              agentRole: agent.role,
+              phase: agent.phase || 'working',
+            },
+          });
+        },
 
-      onAgentComplete: (agentResponse) => {
-        // Show agent completed
-        sendEvent(res, {
-          event: 'on_agent_complete',
-          data: {
-            agentName: agentResponse.agentName,
-            agentRole: agentResponse.agentRole,
-          },
-        });
-      },
+        onAgentComplete: (agentResponse) => {
+          sendEvent(res, {
+            event: 'on_agent_complete',
+            data: {
+              agentName: agentResponse.agentName,
+              agentRole: agentResponse.agentRole,
+            },
+          });
+        },
 
-      // Stream the final synthesized response - send accumulated text
-      onStream: (chunk) => {
-        streamedText += chunk;
-        // Send the FULL accumulated text, not just the chunk
-        // This is how the frontend content handler expects it
-        sendEvent(res, {
-          type: ContentTypes.TEXT,
-          text: streamedText,
-          index: 0,
-          messageId: responseMessageId,
-          conversationId: conversationId,
-        });
-      },
-    });
+        onStream: (chunk) => {
+          streamedText += chunk;
+          sendEvent(res, {
+            type: ContentTypes.TEXT,
+            text: streamedText,
+            index: 0,
+            messageId: responseMessageId,
+            conversationId: conversationId,
+          });
+        },
+      });
+    }
+
+    // CHECK FOR PAUSE IN RESULT
+    if (orchestrationResult.isPaused) {
+      logger.info(`[handleTeamOrchestration] Orchestration paused. Asking user: ${orchestrationResult.message}`);
+
+      // Send the question as the final text
+      const questionText = `[PAUSED] ${orchestrationResult.message}`; // Prefix to help UI? Or just send text.
+      // Let's just send the question text.
+      const outputText = `*${orchestrationResult.message}*\n\n_(Please reply to continue...)_`;
+
+      // We need to overwrite the streamed text with this question so it appears as the bot's response
+      // But streamedText already has content? 
+      // Typically the streaming has been happening. But if we pause, we might want to append the question.
+
+      // Actually, orchestrateTeamResponse returns `message` (question). 
+      // We should send this final chunk.
+
+      sendEvent(res, {
+        type: ContentTypes.TEXT,
+        text: streamedText + '\n\n' + outputText,
+        index: 0,
+        messageId: responseMessageId,
+        conversationId: conversationId,
+      });
+
+      const responseMessage = {
+        messageId: responseMessageId,
+        conversationId: conversationId,
+        parentMessageId: userMessageId,
+        isCreatedByUser: false,
+        user: userId,
+        text: streamedText + '\n\n' + outputText,
+        sender: 'Team',
+        model: 'team-collaboration',
+        endpoint: 'agents',
+        unfinished: false, // It is technically finished as an HTTP request
+        error: false,
+      };
+      await saveMessage(req, responseMessage, { context: 'handleTeamOrchestration - paused response' });
+
+      res.end();
+      return;
+    }
 
     // Final response text
     const finalText = orchestrationResult.success
