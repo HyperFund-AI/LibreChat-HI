@@ -354,7 +354,7 @@ const findColleague = (targetRole, availableSpecialists, excludeAgent = null) =>
 
 /**
  * Execute a focused query to a colleague specialist
- * Lightweight function for answering inter-team questions
+ * Streams the collaboration conversation so users see the back-and-forth
  */
 const executeColleagueQuery = async ({
   colleague,
@@ -385,18 +385,29 @@ ${colleague.instructions || ''}
 Your expertise: ${colleague.expertise || colleague.responsibilities || 'Specialist'}
 
 A colleague (${requestingAgent.name}, ${requestingAgent.role}) is asking you a direct question during a team collaboration.
-Answer concisely and specifically - they need actionable information to continue their analysis.
+
+IMPORTANT: Structure your response with a COLLABORATION_CONVO section that will be shown to stakeholders:
+
+<COLLABORATION_CONVO>
+Respond conversationally as if speaking directly to ${requestingAgent.name} in a team meeting.
+Address them by name, provide your expert input, and be specific with data/facts.
+Example tone: "${requestingAgent.name}, here's what I'm finding in my analysis..."
+</COLLABORATION_CONVO>
 
 Guidelines:
-- Be direct and specific
-- Focus only on answering their question
-- Provide data/facts where relevant
-- Keep response focused (100-200 words max)
-- If you need to qualify your answer, do so briefly`;
+- Address ${requestingAgent.name} directly by name
+- Be conversational but professional
+- Provide specific data/facts where relevant
+- Keep response focused (100-200 words)
+- Make it clear this is a team dialogue`;
 
   const client = new Anthropic({ apiKey });
 
-  const response = await client.messages.create({
+  let accumulatedText = '';
+  let collabText = '';
+  let lastCollabSent = '';
+
+  const stream = client.messages.stream({
     model: colleague.model || ORCHESTRATOR_ANTHROPIC_MODEL,
     max_tokens: 800,
     system: systemPrompt,
@@ -414,7 +425,53 @@ ${context ? `**Context:** ${context}` : ''}
     ],
   });
 
-  const responseText = response.content[0]?.text || '';
+  // Stream and extract COLLABORATION_CONVO in real-time
+  for await (const event of stream) {
+    if (event.type === 'content_block_delta' && event.delta?.text) {
+      const chunk = event.delta.text;
+      accumulatedText += chunk;
+
+      // Extract and stream COLLABORATION_CONVO
+      const collabMatch = accumulatedText.match(/<COLLABORATION_CONVO>([\s\S]*?)(?:<\/COLLABORATION_CONVO>|$)/i);
+      if (collabMatch && collabMatch[1]) {
+        const currentCollab = collabMatch[1].trim();
+
+        // Stream updates when content grows
+        if (currentCollab.length > lastCollabSent.length + 20 && onThinking) {
+          collabText = currentCollab;
+          lastCollabSent = currentCollab;
+
+          onThinking({
+            agent: colleague.name,
+            role: colleague.role,
+            action: 'collaboration',
+            message: currentCollab.substring(0, 150) + (currentCollab.length > 150 ? '...' : ''),
+            collaboration: currentCollab,
+          });
+        }
+      }
+    }
+  }
+
+  // Final extraction
+  const finalCollabMatch = accumulatedText.match(/<COLLABORATION_CONVO>([\s\S]*?)<\/COLLABORATION_CONVO>/i);
+  if (finalCollabMatch) {
+    collabText = finalCollabMatch[1].trim();
+  } else {
+    // Fallback to full response if no tags
+    collabText = accumulatedText;
+  }
+
+  // Send final collaboration update
+  if (onThinking && collabText && collabText !== lastCollabSent) {
+    onThinking({
+      agent: colleague.name,
+      role: colleague.role,
+      action: 'collaboration',
+      message: collabText.substring(0, 150) + (collabText.length > 150 ? '...' : ''),
+      collaboration: collabText,
+    });
+  }
 
   if (onThinking) {
     onThinking({
@@ -426,10 +483,10 @@ ${context ? `**Context:** ${context}` : ''}
   }
 
   logger.info(
-    `[executeColleagueQuery] ${colleague.name} responded with ${responseText.length} chars`,
+    `[executeColleagueQuery] ${colleague.name} responded with ${collabText.length} chars`,
   );
 
-  return responseText;
+  return collabText;
 };
 
 /**
@@ -870,20 +927,28 @@ Since this is marked as "${toolInput.importance}" (not critical), please proceed
         `[executeSpecialist] ${agent.name} requesting info from colleague: ${toolInput.colleague_role}`,
       );
 
+      // Find the matching colleague first so we can use their name
+      const colleague = findColleague(toolInput.colleague_role, availableSpecialists, agent);
+      const colleagueName = colleague ? colleague.name : toolInput.colleague_role;
+
+      // Stream the question as a collaboration event so users see the dialogue
+      const questionText = toolInput.context
+        ? `${colleagueName}, ${toolInput.question}\n\n_Context: ${toolInput.context}_`
+        : `${colleagueName}, ${toolInput.question}`;
+
       if (onThinking) {
+        // First show the question being asked (as collaboration from requesting agent)
         onThinking({
           agent: agent.name,
           role: agent.role,
-          action: 'requesting_colleague',
-          message: `Requesting information from ${toolInput.colleague_role}...`,
+          action: 'collaboration',
+          message: questionText.substring(0, 150) + (questionText.length > 150 ? '...' : ''),
+          collaboration: questionText,
         });
       }
 
-      // Find the matching colleague
-      const colleague = findColleague(toolInput.colleague_role, availableSpecialists, agent);
-
       if (colleague) {
-        // Execute the colleague query
+        // Execute the colleague query (this will stream the response)
         const colleagueResponse = await executeColleagueQuery({
           colleague,
           question: toolInput.question,
