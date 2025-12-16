@@ -20,7 +20,7 @@ const {
 } = require('~/server/services/Teams');
 const { getTeamAgents, getTeamInfo, saveTeamAgents } = require('~/models/Conversation');
 const { getMessages } = require('~/models');
-const { getOrchestrationState } = require('~/models');
+const { getOrchestrationState, TeamOrchestrationState, findPausedState } = require('~/models');
 const { resumeOrchestration } = require('~/server/services/Teams/orchestrator');
 
 function createCloseHandler(abortController) {
@@ -114,15 +114,40 @@ async function handleTeamOrchestration(
 
     // Orchestrate team response with callbacks
     // Check for PAUSED state to RESUME
-    const pausedState = await getOrchestrationState(conversationId);
-    let orchestrationResult;
+    // We strictly check if the *parent* of the current message (the thing being replied to)
+    // is a recorded "Pause Question". If so, we resume that specific lineage.
+    // Otherwise, we treat it as a new branch.
+    logger.info(
+      `[handleTeamOrchestration] Checking for pause state. Conversation: ${conversationId}, ParentMsg: ${parentMessageId}`,
+    );
+    const pausedState = await findPausedState(conversationId, parentMessageId);
+    logger.info(`[handleTeamOrchestration] Paused state found: ${!!pausedState}`);
 
-    if (pausedState && pausedState.status === 'PAUSED') {
+    if (!pausedState) {
+      // Diagnostic: Why wasn't it found?
+      const allStates = await TeamOrchestrationState.find({ conversationId }).lean();
+      logger.info(
+        `[handleTeamOrchestration] DIAGNOSTIC: Found ${allStates.length} total states for this conversation.`,
+      );
+      allStates.forEach((s) => {
+        logger.info(
+          `[State Debug] ID: ${s._id}, Status: ${s.status}, PausedMsgId: ${s.pausedMessageId}, ParentMsgId: ${s.parentMessageId}`,
+        );
+      });
+    }
+
+    let orchestrationResult;
+    // If findPausedState returns a doc, it means parentMessageId matched pausedMessageId
+    // so we can safely resume.
+    const shouldResume = !!pausedState;
+
+    if (shouldResume) {
       logger.info(`[handleTeamOrchestration] Resuming paused orchestration for ${conversationId}`);
       orchestrationResult = await resumeOrchestration({
         conversationId,
         userResponseText: text,
         teamAgents,
+        responseMessageId, // Pass for tracking recursion
         apiKey: req.config?.endpoints?.anthropic?.apiKey || process.env.ANTHROPIC_API_KEY,
         onAgentStart: (agent) => {
           sendEvent(res, {
@@ -168,9 +193,8 @@ async function handleTeamOrchestration(
             messageId: responseMessageId,
             conversationId: conversationId,
           });
-        }
+        },
       });
-
     } else {
       // STANDARD FLOW
       orchestrationResult = await orchestrateTeamResponse({
@@ -179,6 +203,7 @@ async function handleTeamOrchestration(
         conversationId,
         conversationHistory,
         parentMessageId: userMessageId, // We must pass this now!
+        responseMessageId, // Pass for tracking
         fileContext: '',
         knowledgeContext,
         config: req.config,
@@ -244,7 +269,9 @@ async function handleTeamOrchestration(
 
     // CHECK FOR PAUSE IN RESULT
     if (orchestrationResult.isPaused) {
-      logger.info(`[handleTeamOrchestration] Orchestration paused. Asking user: ${orchestrationResult.message}`);
+      logger.info(
+        `[handleTeamOrchestration] Orchestration paused. Asking user: ${orchestrationResult.message}`,
+      );
 
       // Send the question as the final text
       const questionText = `[PAUSED] ${orchestrationResult.message}`; // Prefix to help UI? Or just send text.
@@ -252,10 +279,10 @@ async function handleTeamOrchestration(
       const outputText = `*${orchestrationResult.message}*\n\n_(Please reply to continue...)_`;
 
       // We need to overwrite the streamed text with this question so it appears as the bot's response
-      // But streamedText already has content? 
+      // But streamedText already has content?
       // Typically the streaming has been happening. But if we pause, we might want to append the question.
 
-      // Actually, orchestrateTeamResponse returns `message` (question). 
+      // Actually, orchestrateTeamResponse returns `message` (question).
       // We should send this final chunk.
 
       sendEvent(res, {
@@ -279,7 +306,28 @@ async function handleTeamOrchestration(
         unfinished: false, // It is technically finished as an HTTP request
         error: false,
       };
-      await saveMessage(req, responseMessage, { context: 'handleTeamOrchestration - paused response' });
+      await saveMessage(req, responseMessage, {
+        context: 'handleTeamOrchestration - paused response',
+      });
+
+      // Update conversation
+      const convoUpdate = {
+        conversationId: conversationId,
+        user: userId,
+        endpoint: 'agents',
+        model: 'team-collaboration',
+        title: conversation?.title || 'Team Conversation',
+      };
+      await saveConvo(req, convoUpdate, { context: 'handleTeamOrchestration - save convo' });
+
+      // Send final event to signal completion to UI
+      sendEvent(res, {
+        final: true,
+        conversation: convoUpdate,
+        title: convoUpdate.title,
+        requestMessage: userMessage,
+        responseMessage: responseMessage,
+      });
 
       res.end();
       return;

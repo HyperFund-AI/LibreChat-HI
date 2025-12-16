@@ -32,7 +32,9 @@ const {
 const {
   saveOrchestrationState,
   getOrchestrationState,
+  findPausedState,
   clearOrchestrationState,
+  TeamOrchestrationState,
 } = require('./TeamOrchestrationState');
 const { File } = require('~/db/models');
 
@@ -80,7 +82,9 @@ module.exports = {
 
   saveOrchestrationState,
   getOrchestrationState,
+  findPausedState,
   clearOrchestrationState,
+  TeamOrchestrationState,
 
   Files: File,
 };

@@ -17,6 +17,8 @@ const { runAgentToolLoop, runAgentToolLoopStreaming } = require('./agentRunner')
 
 const ORCHESTRATOR_ANTHROPIC_MODEL = 'claude-sonnet-4-5';
 const ALLOW_DEBUG = true;
+const SPECIALISTS_INCLUDE_LEAD = false;
+const SPECIALISTS_INCLUDE_QA = false;
 
 const zLeadAnalysisSchema = z.object({
   analysis: z.string().describe('Brief analysis of what the objective requires (1-2 sentences)'),
@@ -232,11 +234,20 @@ Guidelines:
   // [DEBUG] Forced Pause Trigger
   if (ALLOW_DEBUG && userMessage.includes('[FORCE_PAUSE]')) {
     logger.info('[executeSpecialist] FORCED PAUSE TRIGGERED');
+    const question = 'Debug Verification: Confirming pause logic works at ' + new Date().toISOString();
+
+    // Properly hydrate history with the question so persistence captures it
+    const history = [...(messageHistory || [])];
+    history.push({
+      role: 'assistant',
+      content: question,
+    });
+
     return {
       text: '',
-      messages: messageHistory || [],
+      messages: history, // Return history INCLUDING the question
       status: 'PAUSED',
-      question: 'Debug Verification: Confirming pause logic works at ' + new Date().toISOString(),
+      question: question,
     };
   }
 
@@ -301,7 +312,7 @@ Guidelines:
   // Check for pause
   if (rawResult && rawResult.status === 'PAUSED') {
     logger.info(`[executeSpecialist] ${agent.name} PAUSED to ask: ${rawResult.question}`);
-    return { ...rawResult, messages: finalMessages }; // Propagate pause up with history
+    return { ...rawResult, messages: finalMessages, thinking: thinkingText }; // Propagate pause up with history AND thinking
   }
 
   // Final text is in the result (or fallback to accumulated)
@@ -372,6 +383,7 @@ Guidelines:
   return {
     text: outputText || accumulatedText,
     messages: finalMessages || [],
+    thinking: thinkingText,
     status: 'COMPLETED',
   };
 };
@@ -480,6 +492,7 @@ const resumeOrchestration = async ({
   onAgentComplete,
   onThinking,
   onStream,
+  responseMessageId,
 }) => {
   const state = await getOrchestrationState(conversationId);
   if (!state || state.status !== 'PAUSED') {
@@ -487,10 +500,16 @@ const resumeOrchestration = async ({
   }
 
   logger.info(`[resumeOrchestration] Resuming conversation ${conversationId}`);
+  logger.info(`[resumeOrchestration] available teamAgents: ${teamAgents.map((a) => a.name).join(', ')}`);
+  logger.info(
+    `[resumeOrchestration] paused orchestration states: ${state.specialistStates.map((s) => s.agentName + '(' + s.status + ')').join(', ')}`,
+  );
 
   const { leadPlan, specialistStates, sharedContext } = state;
   const lead = teamAgents.find((a) => parseInt(a.tier) === 3) || teamAgents[0];
-  const specialists = teamAgents.filter((a) => parseInt(a.tier) !== 3);
+
+  // Do NOT re-filter specialists from teamAgents. Use the saved plan.
+  // The specialistStates array contains the EXACT list of agents selected for this flow, in order.
 
   const specialistInputs = [];
 
@@ -498,27 +517,52 @@ const resumeOrchestration = async ({
   specialistStates
     .filter((s) => s.status === 'COMPLETED')
     .forEach((s) => {
-      const agent = teamAgents.find((a) => a.name === s.agentName);
+      // Prefer the self-contained definition if available
+      let agent = s.agentDefinition;
+      if (!agent) {
+        agent = teamAgents.find((a) => a.name === s.agentName);
+      }
+
       if (agent) {
         specialistInputs.push({
           name: s.agentName,
           role: agent.role,
           response: s.currentOutput,
+          thinking: s.thinking,
+          messages: s.messages, // Restore history for context
+        });
+      } else {
+        // Fallback or skip if agent not found
+        logger.warn(`[resumeOrchestration] Could not find agent ${s.agentName} in teamAgents or agentDefinition`);
+        specialistInputs.push({
+          name: s.agentName,
+          role: 'Specialist', // Fallback role
+          response: s.currentOutput,
         });
       }
     });
 
-  // Find the paused agent
+  // Identify the full list of specialists from the saved state (for assignment lookup)
+  const specialists = specialistStates.map(s => {
+    let agent = s.agentDefinition;
+    if (!agent) {
+      const found = teamAgents.find(a => a.name === s.agentName);
+      agent = found ? { ...found } : { name: s.agentName, role: 'Specialist', model: 'claude-3-5-sonnet-20241022', provider: 'anthropic' };
+    }
+    return agent;
+  });
+
+  // Find the paused agent state
   const pausedState = specialistStates.find((s) => s.status === 'PAUSED');
 
-  // Logic to process the paused agent + subsequent agents
-  // Since we need to run them sequentially, we determine the starting index
+  // Determine starting index (resume from paused, or start of pending if logic changes)
   let startIndex = 0;
   if (pausedState) {
-    const pausedAgentIndex = specialists.findIndex((s) => s.name === pausedState.agentName);
-    if (pausedAgentIndex !== -1) startIndex = pausedAgentIndex;
+    const pausedIndex = specialistStates.findIndex((s) => s.status === 'PAUSED');
+    if (pausedIndex !== -1) startIndex = pausedIndex;
   }
 
+  // The agents to run are the ones from the paused index onwards
   const agentsToProcess = specialists.slice(startIndex);
 
   for (const specialist of agentsToProcess) {
@@ -532,25 +576,55 @@ const resumeOrchestration = async ({
 
       // Hydrate History with User Answer
       const history = [...pausedState.messages]; // Clone
-      const lastMsg = history[history.length - 1];
       let toolCallId = 'unknown';
-      if (lastMsg.role === 'assistant' && Array.isArray(lastMsg.content)) {
-        const toolBlock = lastMsg.content.find(
-          (c) => c.type === 'tool_use' && c.name === 'ask_user',
-        );
-        if (toolBlock) toolCallId = toolBlock.id;
+
+      // Check for last message existence to prevent crash
+      if (history.length > 0) {
+        const lastMsg = history[history.length - 1];
+        if (lastMsg && lastMsg.role === 'assistant' && Array.isArray(lastMsg.content)) {
+          const toolBlock = lastMsg.content.find(
+            (c) => c.type === 'tool_use' && c.name === 'ask_user',
+          );
+          if (toolBlock) toolCallId = toolBlock.id;
+        }
       }
 
-      history.push({
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: toolCallId,
-            content: userResponseText,
-          },
-        ],
-      });
+      if (toolCallId !== 'unknown') {
+        // Standard flow: Resume from tool call
+        history.push({
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: toolCallId,
+              content: userResponseText,
+            },
+          ],
+        });
+      } else {
+        // Fallback: If no tool call found (e.g. debug pause or empty history),
+        // treat user response as a normal message
+
+        // CRITICAL: Ensure the agent knows what it asked.
+        // If history is likely empty or missing the question, inject it from interruptQuestion.
+        if (pausedState.interruptQuestion) {
+          const lastMsg = history[history.length - 1];
+          // Only inject if the last message isn't already the question
+          if (!lastMsg || lastMsg.role !== 'assistant' || !JSON.stringify(lastMsg).includes(pausedState.interruptQuestion)) {
+            logger.info(`[resumeOrchestration] Injecting missing interrupt question into context: "${pausedState.interruptQuestion}"`);
+            history.push({
+              role: 'assistant',
+              content: pausedState.interruptQuestion,
+            });
+          }
+        }
+
+        logger.warn('[resumeOrchestration] No ask_user tool call found in history. Resuming with standard text message.');
+        history.push({
+          role: 'user',
+          content: userResponseText,
+        });
+      }
 
       const idx = specialists.indexOf(specialist) + 1;
       const assignment =
@@ -571,7 +645,7 @@ const resumeOrchestration = async ({
       if (specialistResponse && specialistResponse.status === 'PAUSED') {
         const futureSpecialists = specialists.slice(specialists.indexOf(specialist) + 1);
 
-        const savedResult = await persistTeamState({
+        return await persistTeamState({
           conversationId,
           parentMessageId: state.parentMessageId,
           leadPlan,
@@ -580,16 +654,10 @@ const resumeOrchestration = async ({
           activeAgentResponse: specialistResponse,
           pendingAgents: futureSpecialists,
           sharedContext,
+          leadAgent: lead,
+          allSpecialists: specialists,
+          pausedMessageId: responseMessageId,
         });
-
-        return {
-          ...savedResult,
-          selectedAgents: [lead, ...specialists].filter(Boolean).map((a) => ({
-            id: a.agentId,
-            name: a.name,
-            role: a.role,
-          })),
-        };
       }
 
       specialistInputs.push({
@@ -638,6 +706,7 @@ const resumeOrchestration = async ({
           sharedContext,
           leadAgent: lead,
           allSpecialists: specialists,
+          pausedMessageId: responseMessageId, // Save the ID of the pause question
         });
       }
 
@@ -676,8 +745,9 @@ const resumeOrchestration = async ({
 
   if (onStream) onStream(teamCredits);
 
-  // Clear state
-  await clearOrchestrationState(conversationId);
+  // We do NOT clear the state here.
+  // Keeping it allows the user to go back and "branch" from the same pause point multiple times.
+  // await clearOrchestrationState(conversationId, state.parentMessageId);
 
   return {
     success: true,
@@ -698,13 +768,14 @@ const orchestrateTeamResponse = async ({
   config,
   conversationId,
   parentMessageId,
+  responseMessageId, // New param
   onAgentStart,
   onAgentComplete,
   onThinking,
   onStream,
 }) => {
   try {
-    logger.info(`[orchestrateTeamResponse] Starting with ${teamAgents.length} agents`);
+    logger.info(`[orchestrateTeamResponse] Starting with ${teamAgents.length} agents. ResponseID: ${responseMessageId}`);
 
     const apiKey = config?.endpoints?.anthropic?.apiKey || process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
@@ -719,7 +790,15 @@ const orchestrateTeamResponse = async ({
     }
 
     const lead = teamAgents.find((a) => parseInt(a.tier) === 3) || teamAgents[0];
-    const specialists = teamAgents.filter((a) => parseInt(a.tier) !== 3 && parseInt(a.tier) !== 5);
+    const specialists = teamAgents.filter((a) => {
+      const isLead = a.agentId === lead.agentId || parseInt(a.tier) === 3;
+      const isQA = parseInt(a.tier) === 5;
+
+      if (isLead && !SPECIALISTS_INCLUDE_LEAD) return false;
+      if (isQA && !SPECIALISTS_INCLUDE_QA) return false;
+
+      return true;
+    });
 
     const responses = [];
 
@@ -784,6 +863,7 @@ const orchestrateTeamResponse = async ({
           sharedContext: workPlan.sharedContext,
           leadAgent: lead,
           allSpecialists: selectedSpecialists,
+          pausedMessageId: responseMessageId, // Save the ID of the pause question
         });
 
         return {
@@ -879,6 +959,7 @@ const persistTeamState = async ({
   sharedContext,
   leadAgent,
   allSpecialists,
+  pausedMessageId,
 }) => {
   logger.info(`[persistTeamState] Pausing orchestration for ${activeAgent.name}`);
 
@@ -891,6 +972,8 @@ const persistTeamState = async ({
       status: 'COMPLETED',
       messages: input.messages || [], // Persist history
       currentOutput: input.response,
+      thinking: input.thinking, // Persisted thinking
+      agentDefinition: input.agentDefinition, // Ensure completed agents have definitions too if tracked
     });
   });
 
@@ -900,6 +983,8 @@ const persistTeamState = async ({
     status: 'PAUSED',
     messages: activeAgentResponse.messages || [],
     interruptQuestion: activeAgentResponse.question,
+    thinking: activeAgentResponse.thinking, // Persist thinking state
+    agentDefinition: activeAgent, // Save full active agent definition
   });
 
   // Add pending specialists
@@ -915,6 +1000,7 @@ const persistTeamState = async ({
   await saveOrchestrationState({
     conversationId,
     parentMessageId,
+    pausedMessageId, // Save the resume key
     status: 'PAUSED',
     leadPlan,
     specialistStates,

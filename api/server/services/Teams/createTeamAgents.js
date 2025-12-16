@@ -31,6 +31,7 @@ const createTeamAgents = async ({
         role: role.role,
         name: role.name,
         instructions: role.instructions,
+        tier: role.tier, // Persist tier from LLM extraction
         provider,
         model,
         responsibilities: role.responsibilities || '',

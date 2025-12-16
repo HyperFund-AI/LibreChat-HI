@@ -112,6 +112,7 @@ const teamChatController = async (req, res) => {
       conversationHistory: conversationHistory || [],
       fileContext,
       config: req.config,
+      responseMessageId, // Required for resume linkage
       onAgentStart: (agent) => {
         respondingAgents.push(agent);
         sendSSE(res, {
