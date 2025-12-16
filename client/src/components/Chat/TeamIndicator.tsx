@@ -300,21 +300,22 @@ export default function TeamIndicator({ conversation }: TeamIndicatorProps) {
     return true;
   }, [teamSpecMessage, hasTeam]);
 
-  // Detect approval messages and set loading state
+  // isTeamApprovalLoading is set by the backend via SSE 'team_creating' event
+  // This replaces all the frontend approval detection logic
+  
+  // Debug: log state changes
   useEffect(() => {
-    if (!messages || hasTeam || isTeamApprovalLoading) return;
-
-    // Check the latest user message for approval keywords
-    const latestUserMessage = [...messages].reverse().find((m) => m.isCreatedByUser);
-    if (latestUserMessage) {
-      const text = extractMessageText(latestUserMessage);
-      // Only set loading if we're awaiting confirmation and user sent approval
-      if (awaitingConfirmation && isApprovalMessage(text)) {
-        setIsTeamApprovalLoading(true);
-        setIsCreating(true);
-      }
+    console.log('[TeamIndicator] isTeamApprovalLoading changed:', isTeamApprovalLoading);
+  }, [isTeamApprovalLoading]);
+  
+  // Sync isCreating state with backend-triggered isTeamApprovalLoading
+  useEffect(() => {
+    console.log('[TeamIndicator] Sync check - isTeamApprovalLoading:', isTeamApprovalLoading, 'isCreating:', isCreating);
+    if (isTeamApprovalLoading && !isCreating) {
+      console.log('[TeamIndicator] 🎉 Setting isCreating=true!');
+      setIsCreating(true);
     }
-  }, [messages, awaitingConfirmation, hasTeam, isTeamApprovalLoading, setIsTeamApprovalLoading]);
+  }, [isTeamApprovalLoading, isCreating]);
 
   // Clear loading state when team is created
   useEffect(() => {
